@@ -23,7 +23,13 @@ services:
       - redis_data:/data
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - http_proxy=${HTTP_PROXY:-}
+        - https_proxy=${HTTPS_PROXY:-}
     env_file: .env
     environment:
       WHISPER_CACHE_DIR: /data/whisper_cache
