@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis/redis-stack-server:latest
+    ports:
+      - "4379:6379"
+      - "4001:8001"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      WHISPER_CACHE_DIR: /data/whisper_cache
+      HUGGINGFACE_HUB_CACHE: /data/whisper_cache
+      WORKSPACE_DIR: /data/workspace
+      EMBEDDING_CACHE_DIR: /data/embedding_cache
+    volumes:
+      - whisper_cache:/data/whisper_cache
+      - ./workspace:/data/workspace
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - http_proxy=${HTTP_PROXY:-}
+        - https_proxy=${HTTPS_PROXY:-}
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    ports: ["4000:80"]
+    volumes: ["./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  postgres_data:
+  whisper_cache:
+  redis_data:
