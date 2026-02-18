@@ -1,0 +1,70 @@
+// JVM ignores HTTP_PROXY/HTTPS_PROXY — propagate to system properties + Authenticator
+def proxyUser = null
+def proxyPass = null
+def applyProxy = { envName ->
+    def url = System.getenv(envName) ?: System.getenv(envName.toLowerCase())
+    if (url) {
+        try {
+            def u = url.contains('://') ? url : "http://$url"
+            def uri = new URI(u)
+            if (uri.host) {
+                def port = (uri.port > 0 ? uri.port : 80).toString()
+                def proxies = []
+                if (uri.scheme?.startsWith('socks')) {
+                    System.setProperty('socksProxyHost', uri.host)
+                    System.setProperty('socksProxyPort', port)
+                    proxies = ['socksProxy']
+                } else {
+                    def prefix = envName.startsWith('HTTPS') ? 'https' : 'http'
+                    System.setProperty("${prefix}.proxyHost", uri.host)
+                    System.setProperty("${prefix}.proxyPort", port)
+                    proxies = ["${prefix}.proxy"]
+                }
+                if (uri.userInfo) {
+                    def parts = uri.userInfo.split(':', 2)
+                    proxyUser = URLDecoder.decode(parts[0], 'UTF-8')
+                    proxyPass = parts.length > 1 ? URLDecoder.decode(parts[1], 'UTF-8') : ''
+                    proxies.each { p ->
+                        System.setProperty("${p}User", proxyUser)
+                        System.setProperty("${p}Password", proxyPass)
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to parse $envName: $e.message")
+        }
+    }
+}
+applyProxy('HTTP_PROXY')
+applyProxy('HTTPS_PROXY')
+// Fallback: if only HTTP_PROXY set, use it for HTTPS too (Maven Central uses HTTPS)
+if (System.getProperty('https.proxyHost') == null && System.getProperty('http.proxyHost') != null) {
+    System.setProperty('https.proxyHost', System.getProperty('http.proxyHost'))
+    System.setProperty('https.proxyPort', System.getProperty('http.proxyPort'))
+    if (System.getProperty('http.proxyUser') != null) {
+        System.setProperty('https.proxyUser', System.getProperty('http.proxyUser'))
+        System.setProperty('https.proxyPassword', System.getProperty('http.proxyPassword') ?: '')
+    }
+}
+
+// Authenticator for 407 — system properties alone don't work for all HTTP clients
+def authUser = proxyUser ?: System.getProperty('http.proxyUser')
+def authPass = proxyPass ?: System.getProperty('http.proxyPassword')
+if (authUser != null) {
+    def authenticator = new java.net.Authenticator() {
+        @Override
+        protected java.net.PasswordAuthentication getPasswordAuthentication() {
+            if (requestorType == java.net.Authenticator.RequestorType.PROXY) {
+                return new java.net.PasswordAuthentication(authUser, (authPass ?: '').toCharArray())
+            }
+            return null
+        }
+    }
+    java.net.Authenticator.setDefault(authenticator)
+}
+
+include ':app'
+include ':capacitor-cordova-android-plugins'
+project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+
+apply from: 'capacitor.settings.gradle'

@@ -72,12 +72,14 @@ npm run dev
 
 ## Android
 
+Скрипт собирает фронтенд, копирует в `mobile/www` и собирает APK:
+
 ```bash
 ./scripts/build-android.sh              # debug APK
 ./scripts/build-android.sh --release    # release APK
 ```
 
-Для release нужен `mobile/android/keystore.properties` (см. `keystore.properties.example`).
+Для release нужен `mobile/android/keystore.properties` (см. `keystore.properties.example`). Подробности — в [mobile/README.md](mobile/README.md).
 
 ## Лицензия
 

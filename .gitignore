@@ -64,5 +64,4 @@ mobile/android/local.properties
 .cache/
 .ipynb_checkpoints/
 
-mobile/
-scripts/
+tests/
