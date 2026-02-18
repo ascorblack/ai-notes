@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models import AgentSettings
 
-
 def _defaults_for_agent(agent_type: str) -> dict:
     if agent_type == "notes":
         return {
@@ -23,7 +22,7 @@ def _defaults_for_agent(agent_type: str) -> dict:
 
 async def get_agent_settings(
     db: AsyncSession, user_id: int, agent_type: str
-) -> dict[str, float | int | str]:
+) -> dict[str, float | int | str | list[str]]:
     """Return settings for user+agent_type. Uses config defaults when not in DB."""
     defaults = _defaults_for_agent(agent_type)
     result = await db.execute(

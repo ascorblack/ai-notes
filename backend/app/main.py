@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session_maker
 from app.models import Note
-from app.routers import agent, auth, chat, events, folders, notes, search as search_router, transcribe
+from app.routers import agent, auth, chat, events, folders, notes, search as search_router, tasks, transcribe
 from app.services import embeddings, search as search_service, stt, workspace, workspace_migrate
 
 # Force console logging — errors go to stderr
@@ -94,6 +94,7 @@ app.include_router(notes.router)
 app.include_router(search_router.router)
 app.include_router(folders.router)
 app.include_router(events.router)
+app.include_router(tasks.router)
 app.include_router(agent.router)
 app.include_router(chat.router)
 app.include_router(transcribe.router)

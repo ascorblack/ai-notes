@@ -21,6 +21,13 @@ const ChatIcon = () => (
   </svg>
 );
 
+const TasksIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </svg>
+);
+
 const AddIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
     <line x1="12" y1="5" x2="12" y2="19" />
@@ -47,6 +54,7 @@ export function BottomNavBar({ onAddClick, onMoreClick }: BottomNavBarProps) {
   const setChatSessionsOpen = useAppModalsStore((s) => s.setChatSessionsOpen);
   const isNotes = location.pathname === "/";
   const isChat = location.pathname === "/chat";
+  const isTasks = location.pathname === "/tasks";
 
   return (
     <nav
@@ -76,6 +84,18 @@ export function BottomNavBar({ onAddClick, onMoreClick }: BottomNavBarProps) {
       >
         <NotesIcon />
         <span className="text-xs mt-0.5">Заметки</span>
+      </Link>
+
+      <Link
+        to="/tasks"
+        className={`flex flex-col items-center justify-center min-w-[64px] py-2 touch-target-48 ${
+          isTasks ? "text-accent" : "text-text-muted"
+        }`}
+        aria-label="Задачи"
+        aria-current={isTasks ? "page" : undefined}
+      >
+        <TasksIcon />
+        <span className="text-xs mt-0.5">Задачи</span>
       </Link>
 
       {isChat ? (

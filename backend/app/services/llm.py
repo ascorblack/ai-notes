@@ -36,6 +36,7 @@ async def chat_completion(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     *,
+    tool_choice: str | dict[str, Any] | None = None,
     base_url: str | None = None,
     model: str | None = None,
     api_key: str | None = None,
@@ -63,22 +64,52 @@ async def chat_completion(
     }
     if tools:
         payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = tool_choice if tool_choice is not None else "auto"
 
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if params["api_key"]:
         headers["Authorization"] = f"Bearer {params['api_key']}"
 
+    url = f"{params['base_url'].rstrip('/')}/chat/completions"
+    logger.info(
+        "chat_completion: request",
+        extra={
+            "url": url,
+            "model": payload["model"],
+            "messages_count": len(messages),
+            "has_tools": bool(tools),
+            "tool_choice": str(tool_choice)[:80] if tool_choice else None,
+        },
+    )
+
     async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(
-            f"{params['base_url'].rstrip('/')}/chat/completions",
-            json=payload,
-            headers=headers,
+        resp = await client.post(url, json=payload, headers=headers)
+        body = resp.text
+        logger.info(
+            "chat_completion: response",
+            extra={
+                "status": resp.status_code,
+                "url": url,
+                "body_preview": body[:500] if body else "(empty)",
+                "body_length": len(body) if body else 0,
+            },
         )
+
         resp.raise_for_status()
         data = resp.json()
         choice = data.get("choices")
         if not choice:
+            logger.error(
+                "chat_completion: no choices in vLLM response",
+                extra={
+                    "url": url,
+                    "model": payload["model"],
+                    "response_keys": list(data.keys()),
+                    "response_full": json.dumps(data, ensure_ascii=False)[:2000],
+                    "has_error": "error" in data,
+                    "error_detail": data.get("error") if isinstance(data.get("error"), dict) else str(data.get("error", ""))[:500],
+                },
+            )
             raise ValueError("No choices in vLLM response")
         return choice[0]
 

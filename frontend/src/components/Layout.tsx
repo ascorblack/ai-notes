@@ -164,6 +164,15 @@ export function Layout() {
   const [editMode, setEditMode] = useState(false);
   const [localContent, setLocalContent] = useState("");
 
+  const handleCheckboxToggle = useCallback(
+    async (newContent: string) => {
+      if (token == null || note == null) return;
+      await api.notes.update(token, note.id, { content: newContent });
+      await queryClient.invalidateQueries({ queryKey: ["note", note.id] });
+    },
+    [token, note, queryClient]
+  );
+
   useEffect(() => {
     if (note) {
       setLocalContent(note.content);
@@ -290,6 +299,18 @@ export function Layout() {
           </svg>
           <span className="hidden sm:inline">Календарь</span>
         </motion.button>
+        <Link
+          to="/tasks"
+          className="text-sm text-text-secondary hover:text-accent touch-target-48 p-2 sm:px-3 sm:py-2 rounded-lg hover:bg-accent-muted flex items-center gap-2"
+          title="Задачи"
+          aria-label="Задачи"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+          <span className="hidden sm:inline">Задачи</span>
+        </Link>
         <motion.button
           type="button"
           onClick={logout}
@@ -424,9 +445,23 @@ export function Layout() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 border-b border-border flex-shrink-0">
-                <h1 className="text-base sm:text-xl font-medium truncate min-w-0 text-text-primary">{note.title}</h1>
-                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <div className="flex flex-col gap-1 px-3 sm:px-6 py-2.5 sm:py-4 border-b border-border flex-shrink-0">
+                <div className="flex items-center justify-between gap-2 sm:gap-3">
+                  <h1 className="text-base sm:text-xl font-medium truncate min-w-0 text-text-primary">{note.title}</h1>
+                  <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                  {note.is_task && (
+                    <Link
+                      to="/tasks"
+                      state={{ highlightTaskId: note.id }}
+                      className="text-sm text-accent hover:text-accent/90 touch-target-48 px-3 py-1.5 rounded-lg hover:bg-accent-muted flex items-center gap-1.5"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 11l3 3L22 4" />
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                      </svg>
+                      <span>В задачи</span>
+                    </Link>
+                  )}
                   <motion.button
                     type="button"
                     onClick={async () => {
@@ -454,13 +489,17 @@ export function Layout() {
                       <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
                   </motion.button>
+                  </div>
                 </div>
+                <p className="text-xs text-text-muted">
+                  Изменено: {new Date(note.updated_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
               </div>
               <div className="flex-1 overflow-auto min-h-0">
                 {editMode ? (
                   <NoteEditor content={localContent} onChange={setLocalContent} />
                 ) : (
-                  <NoteView content={note.content} />
+                  <NoteView content={note.content} onCheckboxToggle={handleCheckboxToggle} />
                 )}
               </div>
               <div className="flex-shrink-0 flex justify-center py-3 sm:py-4 px-3 sm:px-4 border-t border-border">

@@ -44,3 +44,4 @@ class AgentProcessResponse(BaseModel):
     created_ids: list[int]
     skipped: bool | None = None
     reason: str | None = None
+    unknown_intent: bool | None = None  # True when classifier could not understand request

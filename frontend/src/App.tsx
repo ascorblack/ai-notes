@@ -5,6 +5,7 @@ import { AuthenticatedShell } from "./components/AuthenticatedShell";
 import { Layout } from "./components/Layout";
 import { Toast } from "./components/Toast";
 import { ChatPage } from "./components/chat/ChatPage";
+import { TasksPage } from "./components/TasksPage";
 import { useAuthStore } from "./store/authStore";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -30,6 +31,7 @@ function App() {
           >
             <Route path="/" element={<Layout />} />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

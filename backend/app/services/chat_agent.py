@@ -95,6 +95,7 @@ async def stream_chat_response(
         agent_params=agent_params,
         user_id=user.id,
         user_content=user_content,
+        db=db,
         max_iterations=10,
     ):
         ev_type = event.get("type")
@@ -187,6 +188,7 @@ async def stream_chat_response_regenerate(
         agent_params=agent_params,
         user_id=user.id,
         user_content=prev_user.content or "",
+        db=db,
         max_iterations=10,
     ):
         ev_type = event.get("type")

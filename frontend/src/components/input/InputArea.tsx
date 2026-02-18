@@ -21,6 +21,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
   const [error, setError] = useState<string | null>(null);
   const [modalStep, setModalStep] = useState<AddNoteStep>("received");
   const [modalMessage, setModalMessage] = useState<string>("");
+  const [intentLabel, setIntentLabel] = useState<string | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectionModalOpen, setSelectionModalOpen] = useState(false);
   const [selectionCandidates, setSelectionCandidates] = useState<{ note_id: number; title: string }[]>([]);
@@ -41,6 +42,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
     setModalOpen(true);
     setModalStep("received");
     setModalMessage("");
+    setIntentLabel(undefined);
 
     let closeModalAsError = false;
     try {
@@ -50,7 +52,15 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
           const message = (data.message as string) ?? "";
           setModalMessage(message);
 
-          if (phase === "building_context") {
+          if (phase === "classifying_intent") {
+            setModalStep("classifying");
+            setStatus(message);
+          } else if (phase === "intent_detected") {
+            const label = (data.intent_label as string) ?? (data.intent as string);
+            setIntentLabel(label);
+            setModalStep("classifying");
+            setStatus(`Запрос: ${label}`);
+          } else if (phase === "building_context") {
             setModalStep("loading_context");
             setStatus(message);
           } else if (phase === "calling_llm") {
@@ -58,6 +68,9 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
             setStatus(message);
           } else if (phase === "executing_tool") {
             setModalStep("creating");
+            setStatus(message);
+          } else if (phase === "saving") {
+            setModalStep("saving");
             setStatus(message);
           }
         } else if (event === "done") {
@@ -77,13 +90,16 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
           const createdIds = (data.created_ids as number[]) ?? [];
           const createdNoteIds = (data.created_note_ids as number[]) ?? [];
           const hasResult = affectedIds.length > 0 || createdIds.length > 0;
+          const unknownIntent = data.unknown_intent === true;
 
-          if (!hasResult) {
+          if (unknownIntent || !hasResult) {
             closeModalAsError = true;
-            const reason = data.skipped && data.reason ? String(data.reason) : null;
+            const reason = unknownIntent
+              ? (data.reason as string) ?? "Не понял запрос. Попробуйте переформулировать."
+              : data.skipped && data.reason ? String(data.reason) : null;
             setModalStep("error");
-            setModalMessage(reason ? `Не сохраняю: ${reason}` : "Ошибка при добавлении");
-            showToast(reason ? `Не сохраняю: ${reason}` : "Не удалось сохранить заметку");
+            setModalMessage(reason ?? "Ошибка при добавлении");
+            showToast(reason ?? "Не удалось сохранить заметку");
           } else {
             setModalStep("done");
             setStatus("Готово");
@@ -93,6 +109,8 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
               setSelectedNote(createdNoteIds[0]);
             }
             queryClient.invalidateQueries({ queryKey: ["tree"] });
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            queryClient.invalidateQueries({ queryKey: ["tasksCategories"] });
             if (createdNoteIds.length === 0) {
               queryClient.invalidateQueries({ queryKey: ["note"] });
             }
@@ -261,6 +279,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
           key="add-note-status"
           step={modalStep}
           currentMessage={modalMessage}
+          intentLabel={intentLabel}
           errorMessage={modalStep === "error" ? (modalMessage || error || undefined) : undefined}
         />
       )}

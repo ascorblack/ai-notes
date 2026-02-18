@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,6 +20,9 @@ class Note(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(default=None, nullable=True)
+    is_task: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    subtasks: Mapped[list[dict] | None] = mapped_column(JSONB, default=None, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(default=None, nullable=True)
 
     user = relationship("User", back_populates="notes")
     folder = relationship("Folder", back_populates="notes")

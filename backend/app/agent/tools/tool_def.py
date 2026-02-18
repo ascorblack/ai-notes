@@ -3,9 +3,12 @@
 import json
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.tools.base_tool import BaseTool
 from app.services import search
@@ -18,6 +21,18 @@ class SearchNotesParams(BaseModel):
 
     exact_queries: list[str]
     semantic_queries: list[str]
+
+
+class GetNotesTreeParams(BaseModel):
+    """No parameters — returns full tree for current user."""
+
+    pass
+
+
+class ReadNotesParams(BaseModel):
+    """IDs заметок для чтения (из get_notes_tree или search_notes)."""
+
+    note_ids: list[int] = Field(..., min_length=1, max_length=10)
 
 
 def _normalize_queries(raw: Any) -> list[str]:
@@ -95,6 +110,58 @@ class SearchNotesTool(BaseTool):
         return json.dumps(out, ensure_ascii=False)
 
 
+class GetNotesTreeTool(BaseTool):
+    """Return full folder+notes tree for user."""
+
+    async def call(
+        self,
+        *,
+        user_id: int,
+        db: "AsyncSession",
+        **kwargs: object,
+    ) -> str:
+        from app.services.notes_tree import get_notes_tree
+
+        response = await get_notes_tree(db, user_id)
+        return json.dumps(response.model_dump(mode="json"), ensure_ascii=False)
+
+
+class ReadNotesTool(BaseTool):
+    """Прочитать полное содержимое заметок по ID (без поиска)."""
+
+    async def call(
+        self,
+        *,
+        user_id: int,
+        db: "AsyncSession",
+        note_ids: list[int],
+        **kwargs: object,
+    ) -> str:
+        from sqlalchemy import select
+
+        from app.models import Note
+        from app.services import workspace
+
+        result = await db.execute(
+            select(Note).where(
+                Note.id.in_(note_ids),
+                Note.user_id == user_id,
+                Note.deleted_at.is_(None),
+            )
+        )
+        notes = {n.id: n for n in result.scalars().all()}
+        out: list[dict[str, Any]] = []
+        for nid in note_ids:
+            note = notes.get(nid)
+            if note is None:
+                logger.warning("read_notes: note not found or not owned", extra={"note_id": nid, "user_id": user_id})
+                out.append({"id": nid, "title": "", "content": "", "error": "not found"})
+                continue
+            content = workspace.get_content(user_id, nid)
+            out.append({"id": note.id, "title": note.title, "content": content})
+        return json.dumps(out, ensure_ascii=False)
+
+
 class ToolDefinition:
     """Tool metadata: OpenAI schema, validation, execution."""
 
@@ -133,4 +200,20 @@ SEARCH_NOTES_TOOL_DEF = ToolDefinition(
     parameters_model=SearchNotesParams,
     instance=SearchNotesTool(),
     timeout_seconds=30,
+)
+
+GET_NOTES_TREE_TOOL_DEF = ToolDefinition(
+    tool_id="get_notes_tree",
+    description="Получить полное древо папок и заметок пользователя (иерархия: папки, подпапки, заметки). Вызывай когда пользователь спрашивает что у него есть, какие папки/заметки, структуру, обзор содержимого.",
+    parameters_model=GetNotesTreeParams,
+    instance=GetNotesTreeTool(),
+    timeout_seconds=15,
+)
+
+READ_NOTES_TOOL_DEF = ToolDefinition(
+    tool_id="read_notes",
+    description="Прочитать полное содержимое заметок по ID. Используй когда уже знаешь id из get_notes_tree или search_notes и нужно увидеть полный текст. note_ids — массив id заметок (1–10 шт).",
+    parameters_model=ReadNotesParams,
+    instance=ReadNotesTool(),
+    timeout_seconds=15,
 )

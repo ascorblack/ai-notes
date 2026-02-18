@@ -18,7 +18,7 @@ export function BackButtonHandler() {
 
     const handler = ({ canGoBack }: { canGoBack: boolean }) => {
       if (closeTop()) return;
-      if (locationRef.current === "/chat") {
+      if (locationRef.current === "/chat" || locationRef.current === "/tasks") {
         navigate("/", { replace: true });
       } else if (canGoBack) {
         window.history.back();

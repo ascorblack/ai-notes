@@ -21,7 +21,9 @@ from app.schemas.agent import (
     ProfileFactUpdate,
     ProfileFactsResponse,
 )
-from app.services.agent import get_profile_facts, process_agent
+from app.agent.dispatcher import AgentDispatcher, UnknownIntentError
+from app.agent.intent_classifier import IntentClassifier, IntentCategory
+from app.services.agent import get_profile_facts
 from app.services.agent_settings_service import get_agent_settings_for_api, upsert_agent_settings
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 def _sse_event(event: str, data: dict) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+_dispatcher = AgentDispatcher()
 
 
 async def _stream_generator(
@@ -45,12 +50,37 @@ async def _stream_generator(
     async def on_event(phase: str, data: dict) -> None:
         await queue.put((phase, data))
 
+    INTENT_LABELS = {
+        IntentCategory.NOTE: "Заметка",
+        IntentCategory.TASK: "Задача",
+        IntentCategory.EVENT: "Событие",
+    }
+
     async def run_agent() -> None:
         nonlocal error_msg
         try:
-            await process_agent(db, user, user_input, note_id=note_id, on_event=on_event)
+            await queue.put(("classifying_intent", {"message": "Определяю тип запроса…"}))
+            intent = await IntentClassifier.classify_intent(db, user.id, user_input)
+            if intent == IntentCategory.UNKNOWN:
+                await queue.put(("done", {"unknown_intent": True, "affected_ids": [], "created_ids": [], "created_note_ids": []}))
+                return
+            await queue.put(("intent_detected", {"intent": intent.value, "intent_label": INTENT_LABELS.get(intent, intent.value)}))
+            await _dispatcher.process(
+                intent=intent,
+                db=db,
+                user_id=user.id,
+                user_input=user_input,
+                note_id=note_id,
+                on_event=on_event,
+            )
+        except UnknownIntentError as e:
+            await queue.put(("done", {"unknown_intent": True, "affected_ids": [], "created_ids": [], "created_note_ids": [], "reason": str(e)}))
         except Exception as e:
-            logger.error("Agent process failed", extra={"user_id": user.id, "error": str(e)})
+            logger.error(
+                "Agent process failed",
+                extra={"user_id": user.id, "error": str(e), "error_type": type(e).__name__},
+                exc_info=True,
+            )
             error_msg = str(e)
         finally:
             await queue.put(("_end", {}))
@@ -178,7 +208,29 @@ async def agent_process(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AgentProcessResponse:
-    affected_ids, created_ids, skipped_reason = await process_agent(db, user, data.user_input, note_id=data.note_id)
+    intent = await IntentClassifier.classify_intent(db, user.id, data.user_input)
+    if intent == IntentCategory.UNKNOWN:
+        return AgentProcessResponse(
+            affected_ids=[],
+            created_ids=[],
+            unknown_intent=True,
+            reason="Не понял запрос. Попробуйте переформулировать.",
+        )
+    try:
+        affected_ids, created_ids, skipped_reason = await _dispatcher.process(
+            intent=intent,
+            db=db,
+            user_id=user.id,
+            user_input=data.user_input,
+            note_id=data.note_id,
+        )
+    except UnknownIntentError as e:
+        return AgentProcessResponse(
+            affected_ids=[],
+            created_ids=[],
+            unknown_intent=True,
+            reason=str(e),
+        )
     return AgentProcessResponse(
         affected_ids=affected_ids,
         created_ids=created_ids,

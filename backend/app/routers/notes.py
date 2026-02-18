@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -89,6 +90,9 @@ async def get_note(
         content=content,
         created_at=note.created_at,
         updated_at=note.updated_at,
+        is_task=note.is_task,
+        subtasks=note.subtasks,
+        completed_at=note.completed_at,
     )
 
 
@@ -106,11 +110,16 @@ async def create_note(
         )
         if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=400, detail="Folder not found")
+    subtasks_data: list[dict[str, Any]] | None = None
+    if data.subtasks:
+        subtasks_data = [s.model_dump() for s in data.subtasks]
     note = Note(
         user_id=user.id,
         folder_id=data.folder_id,
         title=data.title,
         content="",
+        is_task=data.is_task,
+        subtasks=subtasks_data,
     )
     db.add(note)
     await db.commit()
@@ -126,6 +135,9 @@ async def create_note(
         content=content_with_ts,
         created_at=note.created_at,
         updated_at=note.updated_at,
+        is_task=note.is_task,
+        subtasks=note.subtasks,
+        completed_at=note.completed_at,
     )
 
 
@@ -142,8 +154,7 @@ async def update_note(
     if data.title is not None:
         note.title = data.title
     if data.content is not None:
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        workspace.set_content(user.id, note.id, data.content + f"\n\nИзменено: {ts}")
+        workspace.set_content(user.id, note.id, data.content)
         note.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     if data.folder_id is not None:
         if data.folder_id != 0:
@@ -157,6 +168,10 @@ async def update_note(
             note.folder_id = data.folder_id
         else:
             note.folder_id = None
+    if data.is_task is not None:
+        note.is_task = data.is_task
+    if data.subtasks is not None:
+        note.subtasks = [s.model_dump() for s in data.subtasks]
     await db.commit()
     await db.refresh(note)
     content = workspace.get_content(user.id, note.id)
@@ -168,6 +183,9 @@ async def update_note(
         content=content,
         created_at=note.created_at,
         updated_at=note.updated_at,
+        is_task=note.is_task,
+        subtasks=note.subtasks,
+        completed_at=note.completed_at,
     )
 
 

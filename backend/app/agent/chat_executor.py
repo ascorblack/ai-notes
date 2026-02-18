@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.agent.base_executor import BaseChatExecutor, build_system_prompt
-from app.agent.tools.tool_def import SEARCH_NOTES_TOOL_DEF, SearchNotesParams
+from app.agent.tools.tool_def import (
+    GET_NOTES_TREE_TOOL_DEF,
+    READ_NOTES_TOOL_DEF,
+    SEARCH_NOTES_TOOL_DEF,
+    ReadNotesParams,
+    SearchNotesParams,
+)
 from app.services.llm import chat_completion_stream
 
 logger = logging.getLogger(__name__)
@@ -15,22 +21,28 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_TEMPLATE = """Ты — помощник по обсуждению идей на основе заметок пользователя. У тебя есть доступ к поиску по заметкам.
 
 Когда пользователь задаёт вопрос или хочет обсудить тему:
-1. Выдели ключевые слова и термины из запроса (имена, аббревиатуры, бренды — как написано и возможные варианты)
-2. Сформулируй exact_queries: 2–5 коротких запросов — точные ключевые слова для BM25. Обязательно включи термины из запроса (напр. "langpt" → "langpt", "LangPT", "LanGPT")
-3. Сформулируй semantic_queries: 2–5 запросов — переформулировки, синонимы
-4. Вызови search_notes с этими запросами
-5. На основе найденных заметок ответь пользователю
+1. Если спрашивает «что у меня есть», «какие папки», «структура заметок», «обзор» — вызови get_notes_tree.
+2. Если уже есть id заметок (из get_notes_tree/search_notes) и нужен полный текст — read_notes с note_ids.
+3. Иначе: search_notes с exact_queries и semantic_queries. snippet из search_notes краткий — если нужен полный текст, вызови read_notes.
+4. Если поиск ничего не нашёл — честно скажи. Не выдумывай содержимое заметок."""
 
-Если поиск ничего не нашёл — честно скажи об этом. Не выдумывай содержимое заметок."""
-
-TOOLS = {"search_notes": SEARCH_NOTES_TOOL_DEF}
+TOOLS = {
+    "search_notes": SEARCH_NOTES_TOOL_DEF,
+    "get_notes_tree": GET_NOTES_TREE_TOOL_DEF,
+    "read_notes": READ_NOTES_TOOL_DEF,
+}
 
 
 def _get_tools_for_prompt() -> str:
-    schema = SearchNotesParams.model_json_schema()
-    props = schema.get("properties", {})
-    params_str = ", ".join(props.keys())
-    return f"search_notes - {SEARCH_NOTES_TOOL_DEF.description} ({params_str})"
+    search_props = SearchNotesParams.model_json_schema().get("properties", {})
+    search_params = ", ".join(search_props.keys())
+    read_props = ReadNotesParams.model_json_schema().get("properties", {})
+    read_params = ", ".join(read_props.keys())
+    return (
+        f"search_notes - {SEARCH_NOTES_TOOL_DEF.description} ({search_params})\n"
+        f"get_notes_tree - {GET_NOTES_TREE_TOOL_DEF.description}\n"
+        f"read_notes - {READ_NOTES_TOOL_DEF.description} ({read_params})"
+    )
 
 
 async def _stream_turn(
@@ -39,6 +51,7 @@ async def _stream_turn(
     agent_params: dict[str, Any],
     user_id: int,
     user_content: str,
+    db: Any,
     max_iterations: int = 10,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream one turn. Yields content_delta, tool_call, tool_result, done."""
@@ -52,9 +65,15 @@ async def _stream_turn(
         tool_calls_by_id: dict[str, dict[str, Any]] = {}
         turn_content = ""
 
+        openai_tools = [
+            SEARCH_NOTES_TOOL_DEF.to_openai_function(),
+            GET_NOTES_TREE_TOOL_DEF.to_openai_function(),
+            READ_NOTES_TOOL_DEF.to_openai_function(),
+        ]
+
         async for chunk in chat_completion_stream(
             messages,
-            tools=[SEARCH_NOTES_TOOL_DEF.to_openai_function()],
+            tools=openai_tools,
             base_url=agent_params.get("base_url"),
             model=agent_params.get("model"),
             api_key=agent_params.get("api_key") or None,
@@ -100,45 +119,47 @@ async def _stream_turn(
         for tc_key, tc in tool_calls_by_id.items():
             tc_id = tc.get("id", tc_key)
             name = tc.get("name")
-            args_str = tc.get("arguments", "")
-            if name != "search_notes":
+            args_str = tc.get("arguments", "") or "{}"
+            if name not in TOOLS:
                 continue
 
             try:
-                args = json.loads(args_str) if args_str else {}
+                args = json.loads(args_str) if args_str.strip() else {}
             except json.JSONDecodeError as e:
                 logger.warning("chat: tool args JSON parse failed", extra={"args_preview": str(args_str)[:200], "error": str(e)})
                 continue
 
-            raw_exact = args.get("exact_queries")
-            raw_semantic = args.get("semantic_queries")
-            exact = _normalize_queries(raw_exact)
-            semantic = _normalize_queries(raw_semantic)
-            logger.info(
-                "chat: tool_call search_notes",
-                extra={"raw_exact": raw_exact, "raw_semantic": raw_semantic, "exact": exact, "semantic": semantic},
-            )
+            logger.info("chat: tool_call", extra={"name": name, "tool_call_id": tc_id})
             yield {"type": "tool_call", "id": tc_id, "name": name, "arguments": args}
 
-            fallback = user_content if not (exact or semantic) else None
+            extra: dict[str, Any] = {"user_id": user_id, "db": db}
+            if name == "search_notes":
+                raw_exact = args.get("exact_queries")
+                raw_semantic = args.get("semantic_queries")
+                exact = _normalize_queries(raw_exact)
+                semantic = _normalize_queries(raw_semantic)
+                if not (exact or semantic):
+                    extra["fallback_query"] = user_content
+
             result = await executor._execute_tool(
-                tool_name="search_notes",
+                tool_name=name,
                 raw_args=args_str,
                 tool_call_id=tc_id,
-                extra_context={
-                    "user_id": user_id,
-                    "fallback_query": fallback,
-                },
+                extra_context=extra,
             )
-            try:
-                results = json.loads(result) if isinstance(result, str) and result.strip().startswith("[") else []
-            except json.JSONDecodeError:
-                results = []
-            if not isinstance(results, list):
-                results = []
 
-            logger.info("chat: tool_result", extra={"results_count": len(results), "note_ids": [r.get("id") for r in results]})
-            yield {"type": "tool_result", "id": tc_id, "results": results}
+            if name == "search_notes":
+                try:
+                    results = json.loads(result) if isinstance(result, str) and result.strip().startswith("[") else []
+                except json.JSONDecodeError:
+                    results = []
+                if not isinstance(results, list):
+                    results = []
+                logger.info("chat: tool_result", extra={"results_count": len(results), "note_ids": [r.get("id") for r in results]})
+                yield {"type": "tool_result", "id": tc_id, "results": results}
+            else:
+                yield {"type": "tool_result", "id": tc_id, "content": result}
+
             executed_any = True
             assistant_tool_calls.append({
                 "id": tc_id,
@@ -192,10 +213,11 @@ class ChatExecutor(BaseChatExecutor):
         agent_params: dict[str, Any],
         user_id: int,
         user_content: str,
+        db: Any,
         max_iterations: int = 10,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream one turn. Yields content_delta, tool_call, tool_result, _internal_final."""
         async for event in _stream_turn(
-            self, messages, agent_params, user_id, user_content, max_iterations
+            self, messages, agent_params, user_id, user_content, db, max_iterations
         ):
             yield event

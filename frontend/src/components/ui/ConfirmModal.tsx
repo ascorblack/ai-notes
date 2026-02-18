@@ -75,12 +75,13 @@ export function ConfirmModal({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.15 }}
-            className="fixed left-[max(1rem,env(safe-area-inset-left))] right-[max(1rem,env(safe-area-inset-right))] top-1/2 z-[101] max-h-[min(85dvh,calc(100dvh-4rem))] max-w-md -translate-y-1/2 overflow-y-auto rounded-xl border bg-surface-elevated p-4 shadow-xl"
-            style={{
-              borderColor: danger ? "var(--error)" : "var(--border)",
-            }}
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none"
           >
+            <div
+              className="w-full max-w-md max-h-[min(85dvh,calc(100dvh-4rem))] overflow-y-auto rounded-xl border bg-surface-elevated p-4 shadow-xl pointer-events-auto"
+              style={{ borderColor: danger ? "var(--error)" : "var(--border)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
             <h3 className="text-lg font-medium text-[var(--text-primary)]">{title}</h3>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">{message}</p>
             <div className="mt-4 flex justify-end gap-2">
@@ -103,6 +104,7 @@ export function ConfirmModal({
                 {confirmLabel}
               </button>
             </div>
+          </div>
           </motion.div>
         </>
       )}

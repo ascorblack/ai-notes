@@ -174,7 +174,11 @@ async def regenerate_message(
                         "arguments": event.get("arguments"),
                     })
                 elif ev_type == "tool_result":
-                    yield _sse_event("tool_result", {"id": event.get("id"), "results": event.get("results", [])})
+                    yield _sse_event("tool_result", {
+                        "id": event.get("id"),
+                        "results": event.get("results", []),
+                        "content": event.get("content"),
+                    })
                 elif ev_type == "done":
                     yield _sse_event("done", {"message_id": event.get("message_id"), "content": event.get("content", "")})
                 elif ev_type == "error":
@@ -219,7 +223,11 @@ async def send_message(
                         "arguments": event.get("arguments"),
                     })
                 elif ev_type == "tool_result":
-                    yield _sse_event("tool_result", {"id": event.get("id"), "results": event.get("results", [])})
+                    yield _sse_event("tool_result", {
+                        "id": event.get("id"),
+                        "results": event.get("results", []),
+                        "content": event.get("content"),
+                    })
                 elif ev_type == "done":
                     yield _sse_event("done", {"message_id": event.get("message_id"), "content": event.get("content", "")})
                 elif ev_type == "error":

@@ -371,6 +371,25 @@ export const api = {
         request<void>(`/notes/trash/${id}`, { method: "DELETE", token }),
     },
   },
+  tasks: {
+    list: (token: string, includeCompleted?: boolean, folderId?: number | null) =>
+      request<TaskResponse[]>(
+        `/tasks?include_completed=${includeCompleted ?? false}${folderId != null ? `&folder_id=${folderId}` : ""}`,
+        { token }
+      ),
+    categories: (token: string) =>
+      request<TaskCategory[]>(`/tasks/categories`, { token }),
+    complete: (token: string, id: number) =>
+      request<TaskResponse>(`/tasks/${id}/complete`, { method: "PATCH", token }),
+    uncomplete: (token: string, id: number) =>
+      request<TaskResponse>(`/tasks/${id}/uncomplete`, { method: "PATCH", token }),
+    updateSubtasks: (token: string, id: number, subtasks: SubtaskItem[]) =>
+      request<TaskResponse>(`/tasks/${id}/subtasks`, {
+        method: "PATCH",
+        token,
+        body: JSON.stringify({ subtasks }),
+      }),
+  },
 };
 
 export interface FolderTree {
@@ -401,6 +420,7 @@ export interface NoteResponse {
   content: string;
   created_at: string;
   updated_at: string;
+  is_task?: boolean;
 }
 
 export interface TrashItem {
@@ -416,4 +436,25 @@ export interface EventResponse {
   title: string;
   starts_at: string;
   ends_at: string;
+}
+
+export interface SubtaskItem {
+  text: string;
+  done: boolean;
+}
+
+export interface TaskCategory {
+  id: number;
+  name: string;
+}
+
+export interface TaskResponse {
+  id: number;
+  title: string;
+  content: string;
+  subtasks: SubtaskItem[] | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  folder_id: number | null;
 }

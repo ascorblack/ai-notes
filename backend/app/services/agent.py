@@ -32,7 +32,28 @@ TOOLS = [
                 "properties": {
                     "folder_id": {"type": ["integer", "null"], "description": "ID папки или null для корня"},
                     "title": {"type": "string", "description": "Заголовок"},
-                    "content": {"type": "string", "description": "Переформулированное и структурированное содержимое в Markdown (не копировать verbatim)"},
+                    "content": {"type": "string", "description": "Markdown по шаблону: Кратко, Основное, Ключевые пункты, Задачи (опционально), Связи/Выводы (опционально). Не копировать verbatim."},
+                },
+                "required": ["title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_task",
+            "description": "Создать ЗАДАЧУ (не привязанную ко времени). Кладётся в папку «Задачи», при необходимости в подпапку по category. category — категория задачи (Работа, Дом, Здоровье, Учёба и т.д.). Используй когда пользователь просит задачу — БЕЗ даты/времени. subtasks — массив {text, done}.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Заголовок задачи (кратко)"},
+                    "content": {"type": "string", "description": "Описание задачи (Markdown)"},
+                    "category": {"type": ["string", "null"], "description": "Категория: Работа, Дом, Здоровье, Учёба, Проект X. null — без категории."},
+                    "subtasks": {
+                        "type": "array",
+                        "items": {"type": "object", "properties": {"text": {"type": "string"}, "done": {"type": "boolean"}}, "required": ["text"]},
+                        "description": "Подзадачи (опционально). Каждая: {text: 'описание', done: false}",
+                    },
                 },
                 "required": ["title", "content"],
             },
@@ -47,7 +68,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "note_id": {"type": "integer"},
-                    "content": {"type": "string", "description": "Переформулированный и структурированный Markdown-блок (не копировать verbatim)"},
+                    "content": {"type": "string", "description": "Markdown-блок по той же структуре шаблона (Кратко, Основное и т.д.). Не копировать verbatim."},
                 },
                 "required": ["note_id", "content"],
             },
@@ -95,7 +116,7 @@ TOOLS = [
                     "folder_name": {"type": "string", "description": "Имя папки/подпапки: Задачи, Проекты, Идеи, ЭБС-Лань и т.д."},
                     "parent_folder_id": {"type": ["integer", "null"], "description": "ID родительской папки для подпапки; null — создать в корне"},
                     "title": {"type": "string", "description": "Заголовок заметки"},
-                    "content": {"type": "string", "description": "Переформулированное и структурированное содержимое в Markdown"},
+                    "content": {"type": "string", "description": "Markdown по шаблону: Кратко, Основное, Ключевые пункты, Задачи/Связи при необходимости."},
                 },
                 "required": ["folder_name", "title", "content"],
             },
@@ -157,7 +178,7 @@ TOOLS = [
                 "properties": {
                     "folder_id": {"type": ["integer", "null"], "description": "ID папки или null для корня"},
                     "title": {"type": "string", "description": "Краткий заголовок события (для календаря)"},
-                    "content": {"type": "string", "description": "Markdown: структурированное описание (когда, название, детали). Включай секции 'Событие', 'Заметка пользователя', 'Детали'."},
+                    "content": {"type": "string", "description": "Markdown по шаблону событий: ## Событие (что, когда, где), ## Заметка пользователя (исходный текст), ## Детали (подробности)."},
                     "starts_at": {"type": "string", "description": "ISO 8601 начало (например 2025-02-18T15:00:00)"},
                     "ends_at": {"type": "string", "description": "ISO 8601 конец (например 2025-02-18T16:00:00)"},
                 },
@@ -176,13 +197,15 @@ SYSTEM_PROMPT = """Ты — агент организации заметок. П
 Алгоритм (порядок проверки важен):
 1. ПРОВЕРЬ НАМЕРЕНИЕ СОБЫТИЯ первым. Ключевые слова: напоминание, добавить в календарь, встреча, событие, на дату, в [время], завтра в, в пятницу. Если пользователь просит что-то на конкретную дату/время → ТОЛЬКО create_note_with_event. create_folder_with_note и create_note НЕ создают события в календаре.
 2. Для событий: извлекай дату и время из текста. starts_at/ends_at в ISO 8601. Дефолты: 09:00 для «только дата», 30 мин длительность если не указано.
-3. ЕСЛИ в контексте есть блок «Заметка для редактирования» — пользователь работает с этой заметкой. Используй append_to_note или patch_note для неё. Не создавай новую заметку.
-4. ЕСЛИ пользователь просит изменить/дополнить существующую заметку, но блок «Заметка для редактирования» отсутствует: подходит ОДНА заметка → append_to_note или patch_note. Подходят НЕСКОЛЬКО → request_note_selection с candidates.
-5. Для обычных заметок (без даты/напоминания) выбери ОДНО:
+3. ПРОВЕРЬ ЗАДАЧУ. Ключевые слова: задача, нужно сделать, не забудь, запомни что надо, добавить в задачи. Если НЕТ даты/времени → create_task (не create_note). Указывай category по контексту (Работа, Дом, Здоровье, Учёба, Проект и т.д.). В subtasks — подзадачи если есть чекбоксы/шаги.
+4. ЕСЛИ в контексте есть блок «Заметка для редактирования» — пользователь работает с этой заметкой. Используй append_to_note или patch_note для неё. Не создавай новую заметку.
+5. ЕСЛИ пользователь просит изменить/дополнить существующую заметку, но блок «Заметка для редактирования» отсутствует: подходит ОДНА заметка → append_to_note или patch_note. Подходят НЕСКОЛЬКО → request_note_selection с candidates.
+6. Для обычных заметок (без даты/напоминания/задачи) выбери ОДНО:
    a) append_to_note — та же тема, запись дополняет существующую заметку
    b) create_note в существующей папке — тема папки совпадает, но отдельная запись
-   c) create_folder_with_note — новая сфера (работа, компания, учёба, здоровье). НЕ для напоминаний/событий — только для обычных заметок без привязки к дате.
-   d) request_note_selection — только когда запрос на редактирование/дополнение и подходят 2+ заметки (п.4).
+   c) create_task — если пользователь описывает что-то что НУЖНО СДЕЛАТЬ (без привязки ко времени)
+   d) create_folder_with_note — новая сфера (работа, компания, учёба, здоровье). НЕ для напоминаний/событий — только для обычных заметок без привязки к дате.
+   e) request_note_selection — только когда запрос на редактирование/дополнение и подходят 2+ заметки (п.5).
 
 Правила папок и иерархии:
 - Папки могут иметь подпапки (parent_folder_id). Контекст показывает дерево — используй id родителя для подпапок.
@@ -192,9 +215,32 @@ SYSTEM_PROMPT = """Ты — агент организации заметок. П
 - ПРЕДПОЧИТАЙ create_folder_with_note, когда пользователь упоминает: работу, компанию, должность, проект, учёбу, здоровье. Для новой сферы — корневая папка (parent_folder_id=null). Для подкатегории — подпапка (parent_folder_id=id родителя).
 - create_note с folder_id=null только если контекст общий/разрозненный.
 
-Правила контента:
+Правила контента и шаблон заметки:
 - Контент ВСЕГДА — твоя переформулировка (максимально раскрыть суть), в Markdown
-- При append добавляй разделитель "\\n\\n---\\n\\n"
+- Используй единый шаблон структуры (опускай пустые секции):
+
+## Шаблон заметки (Markdown)
+```markdown
+## Кратко
+[1–2 предложения: о чём заметка, главная мысль]
+
+## Основное
+[детали, контекст, пояснения — с подзаголовками ## если нужно]
+
+## Ключевые пункты
+- [буллеты для важных фактов, решений, идей]
+
+## Задачи (если есть)
+- [ ] действие 1
+- [ ] действие 2
+
+## Связи / Выводы (если есть)
+[связанные идеи, итоговые мысли]
+```
+
+- Секции «Задачи» и «Связи/Выводы» — только если релевантны
+- Для create_note_with_event: ## Событие | ## Заметка пользователя | ## Детали (без Кратко/Задачи)
+- При append добавляй разделитель "\\n\\n---\\n\\n" перед новым блоком
 - Заголовки краткие (до 5 слов)
 - Для patch_note используй ТОЧНЫЕ строки из оригинала
 - Отвечай ТОЛЬКО вызовами инструментов, без текста
@@ -205,6 +251,56 @@ SYSTEM_PROMPT = """Ты — агент организации заметок. П
 - После create_folder_with_note/create_note — вызови update_user_profile при новой сфере или подкатегории. Формат: «Пользователь X. Идеи по Y класть в папку Z.» Для подпапок: «Задачи по [компания] класть в подпапку Задачи внутри [папка].»
 - skip_save — когда нечего сохранять: приветствие, «спасибо», неполная фраза, тест.
 """
+
+TASKS_FOLDER_NAME = "Задачи"
+
+
+async def _get_or_create_tasks_folder(db: AsyncSession, user_id: int) -> Folder:
+    """Get or create root folder for tasks."""
+    result = await db.execute(
+        select(Folder).where(
+            Folder.user_id == user_id,
+            Folder.name == TASKS_FOLDER_NAME,
+            Folder.parent_folder_id.is_(None),
+        )
+    )
+    folder = result.scalar_one_or_none()
+    if folder is not None:
+        return folder
+    folder = Folder(user_id=user_id, name=TASKS_FOLDER_NAME, parent_folder_id=None, order_index=0)
+    db.add(folder)
+    await db.flush()
+    logger.info("Created tasks folder", extra={"user_id": user_id, "folder_id": folder.id})
+    return folder
+
+
+async def _get_or_create_task_category(
+    db: AsyncSession, parent_folder: Folder, category_name: str, user_id: int
+) -> Folder:
+    """Get or create subfolder under tasks folder for category."""
+    name = category_name.strip() if category_name else ""
+    if not name:
+        return parent_folder
+    result = await db.execute(
+        select(Folder).where(
+            Folder.user_id == user_id,
+            Folder.parent_folder_id == parent_folder.id,
+            Folder.name == name,
+        )
+    )
+    folder = result.scalar_one_or_none()
+    if folder is not None:
+        return folder
+    folder = Folder(
+        user_id=user_id,
+        name=name,
+        parent_folder_id=parent_folder.id,
+        order_index=0,
+    )
+    db.add(folder)
+    await db.flush()
+    logger.info("Created task category folder", extra={"user_id": user_id, "name": name})
+    return folder
 
 
 async def _get_note_for_user(db: AsyncSession, note_id: int, user_id: int) -> Note | None:
@@ -384,6 +480,7 @@ async def process_agent(
 
     _status_msg = {
         "create_note": "Создаю заметку",
+        "create_task": "Создаю задачу",
         "append_to_note": "Добавляю в заметку",
         "patch_note": "Редактирую заметку",
         "create_folder": "Создаю папку",
@@ -409,6 +506,8 @@ async def process_agent(
         msg = _status_msg.get(name, name)
         if name == "create_note":
             msg = f"Создаю заметку «{args.get('title', '')}»"
+        elif name == "create_task":
+            msg = f"Создаю задачу «{args.get('title', '')}»"
         elif name == "append_to_note":
             msg = "Добавляю в существующую заметку"
         elif name == "create_folder_with_note":
@@ -477,6 +576,38 @@ async def process_agent(
             created_note_ids.append(note.id)
             affected_ids.append(note.id)
 
+        elif name == "create_task":
+            title = args.get("title")
+            content = args.get("content", "")
+            category = args.get("category")
+            subtasks_raw = args.get("subtasks")
+            if not title:
+                continue
+            tasks_folder = await _get_or_create_tasks_folder(db, user.id)
+            target_folder = await _get_or_create_task_category(db, tasks_folder, category or "", user.id)
+            subtasks: list[dict] | None = None
+            if isinstance(subtasks_raw, list) and subtasks_raw:
+                subtasks = []
+                for st in subtasks_raw:
+                    if isinstance(st, dict) and st.get("text"):
+                        subtasks.append({"text": st["text"], "done": bool(st.get("done", False))})
+            note = Note(
+                user_id=user.id,
+                folder_id=target_folder.id,
+                title=title,
+                content="",
+                is_task=True,
+                subtasks=subtasks,
+            )
+            db.add(note)
+            await db.flush()
+            content_full = f"Создано: {_ts()}\n\n{content}"
+            workspace.set_content(user.id, note.id, content_full)
+            search.index_note(user.id, note.id, note.title, content_full)
+            created_ids.append(note.id)
+            created_note_ids.append(note.id)
+            affected_ids.append(note.id)
+
         elif name == "append_to_note":
             note_id = args.get("note_id")
             content = args.get("content", "")
@@ -504,7 +635,7 @@ async def process_agent(
                 logger.warning("Agent patch_note: note not found", extra={"note_id": note_id})
                 continue
             cur = workspace.get_content(user.id, note.id)
-            new_content = _execute_patch_note(cur, old_text, new_text) + f"\n\nИзменено: {_ts()}"
+            new_content = _execute_patch_note(cur, old_text, new_text)
             workspace.set_content(user.id, note.id, new_content)
             search.index_note(user.id, note.id, note.title, new_content)
             note.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
