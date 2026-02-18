@@ -18,27 +18,40 @@ export function VoiceButton({ onTranscription, onError, disabled }: VoiceButtonP
 
   const startRecording = async () => {
     if (!token) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
-    recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      if (chunksRef.current.length === 0) return;
-      setLoading(true);
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      const res = await api.transcribe(token, blob).catch((err: Error) => {
-        onError?.(err.message);
-        return null;
-      });
-      setLoading(false);
-      if (res?.text) onTranscription(res.text);
-    };
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-    setRecording(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) =>
+        MediaRecorder.isTypeSupported(t)
+      );
+      const options = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, options);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (chunksRef.current.length === 0) return;
+        setLoading(true);
+        const blobType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: blobType });
+        const res = await api.transcribe(token, blob).catch((err: Error) => {
+          onError?.(err.message);
+          return null;
+        });
+        setLoading(false);
+        if (res?.text) onTranscription(res.text);
+      };
+      recorder.onerror = () => {
+        onError?.("Recording error");
+      };
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      onError?.(msg || "Microphone access failed");
+    }
   };
 
   const stopRecording = () => {
