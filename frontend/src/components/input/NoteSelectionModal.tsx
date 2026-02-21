@@ -35,13 +35,13 @@ export function NoteSelectionModal({
         <p className="px-4 pb-2 text-sm text-text-muted">
           К какую заметку применить изменения?
         </p>
-        <div className="max-h-72 overflow-y-auto">
+        <div className="max-h-72 overflow-y-auto px-2">
           {candidates.map((c) => (
             <button
               key={c.note_id}
               type="button"
               onClick={() => onSelect(c.note_id)}
-              className="touch-target-48 w-full px-5 py-3 flex items-center gap-3 text-left hover:bg-accent-muted/50 transition-colors border-b border-border last:border-b-0"
+              className="touch-target-48 w-full px-4 py-3 flex items-center gap-3 text-left pl-4 border-l-2 border-accent/60 bg-accent-muted/20 hover:bg-accent-muted/30 rounded-xl my-1 transition-colors"
             >
               <span className="text-text-primary font-medium truncate flex-1">
                 {c.title || `Заметка #${c.note_id}`}
@@ -79,19 +79,19 @@ export function NoteSelectionModal({
       transition={{ duration: 0.2 }}
     >
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-modal-overlay backdrop-blur-sm"
         aria-hidden="true"
         onClick={onCancel}
       />
       <motion.div
-        className="relative w-full max-w-md rounded-2xl border border-border bg-surface-elevated shadow-2xl overflow-hidden"
+        className="relative w-full max-w-md rounded-2xl border border-l-4 border-accent/50 border-border bg-modal-panel backdrop-blur-md shadow-2xl overflow-hidden"
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.2 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-border">
+        <div className="px-5 py-4 border-b border-border/60">
           <h3 className="text-base font-semibold text-text-primary">
             Выберите заметку для редактирования
           </h3>
@@ -105,7 +105,7 @@ export function NoteSelectionModal({
               key={c.note_id}
               type="button"
               onClick={() => onSelect(c.note_id)}
-              className="w-full px-5 py-3 flex items-center gap-3 text-left hover:bg-accent-muted/50 transition-colors border-b border-border last:border-b-0"
+              className="w-full px-4 py-3 flex items-center gap-3 text-left pl-4 border-l-2 border-accent/60 bg-accent-muted/20 hover:bg-accent-muted/30 rounded-xl my-1 transition-colors"
             >
               <span className="text-text-primary font-medium truncate flex-1">
                 {c.title || `Заметка #${c.note_id}`}

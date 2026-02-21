@@ -30,8 +30,12 @@ export default {
         "accent-secondary-muted": "var(--accent-secondary-muted)",
         "new-item-glow": "var(--new-item-glow)",
         success: "var(--success)",
+        "success-bg": "var(--success-bg)",
         error: "var(--error)",
+        "error-bg": "var(--error-bg)",
         warning: "var(--warning)",
+        "modal-overlay": "var(--modal-overlay)",
+        "modal-panel": "var(--modal-panel)",
       },
       transitionDuration: {
         150: "150ms",

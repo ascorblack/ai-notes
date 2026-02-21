@@ -12,6 +12,7 @@ from app.agent.tools.notes_tool_def import (
     REQUEST_NOTE_SELECTION_TOOL_DEF,
     UPDATE_USER_PROFILE_TOOL_DEF,
 )
+from app.agent.tools.tags_tool_def import ADD_TAGS_TO_NOTE_TOOL_DEF, SUGGEST_TAGS_TOOL_DEF
 from app.services.agent import build_context
 from app.services.agent_settings_service import get_agent_settings
 from app.services.llm import chat_completion
@@ -24,6 +25,8 @@ TOOL_DISPLAY: dict[str, str] = {
     "patch_note": "Редактирую заметку",
     "request_note_selection": "Уточняю заметку",
     "update_user_profile": "Обновляю профиль",
+    "suggest_tags": "Предлагаю теги",
+    "add_tags_to_note": "Добавляю теги",
 }
 
 TOOLS = {
@@ -32,21 +35,32 @@ TOOLS = {
     "patch_note": PATCH_NOTE_TOOL_DEF,
     "request_note_selection": REQUEST_NOTE_SELECTION_TOOL_DEF,
     "update_user_profile": UPDATE_USER_PROFILE_TOOL_DEF,
+    "suggest_tags": SUGGEST_TAGS_TOOL_DEF,
+    "add_tags_to_note": ADD_TAGS_TO_NOTE_TOOL_DEF,
 }
 
-SYSTEM_PROMPT = """Ты — агент организации заметок. Пользователь пишет сырые идеи, черновики.
+SYSTEM_PROMPT = """Ты — агент организации заметок. Пользователь пишет сырые идеи, черновики, наговаривает поток сознания.
 
 Твоя задача: извлечь суть, переформулировать структурированно в Markdown. НЕ копировать verbatim.
+
+Режим «диктофон → структурированная заметка»: если ввод похож на поток сознания (длинный, без явной структуры, смесь мыслей/задач/дат/идей) — разбей на чёткие блоки:
+- ## Задачи — что нужно сделать (списком - [ ])
+- ## Даты и события — упоминания времени, встреч, дедлайнов
+- ## Идеи — ключевые мысли, инсайты
+- ## Факты — конкретная информация
+Добавляй разделитель "\\n\\n---\\n\\n" между блоками.
 
 Правила:
 1. Если есть блок «Заметка для редактирования» — используй append_to_note или patch_note.
 2. Если запрос изменить/дополнить заметку и подходят НЕСКОЛЬКО — request_note_selection с candidates.
 3. Иначе — create_note (folder_id или folder_name для новой папки).
-4. После создания — update_user_profile при новой сфере.
+4. После создания заметки — suggest_tags(note_id), затем add_tags_to_note(note_id, tag_names из ответа).
+5. После создания — ОБЯЗАТЕЛЬНО проверь: есть ли в запросе новая сфера/компания/проект. Если да и её нет в «Известно о пользователе» — вызови update_user_profile.
 
 Шаблон заметки:
 ## Кратко | ## Основное | ## Ключевые пункты | ## Задачи (опц) | ## Связи (опц)
 При append добавляй "\\n\\n---\\n\\n" перед новым блоком.
+Если в контексте есть «Похожие заметки для связывания» — добавь релевантные [[Title]] в ## Связи.
 Отвечай ТОЛЬКО вызовами инструментов."""
 
 
@@ -73,7 +87,9 @@ class NotesExecutor(BaseChatExecutor):
                 await on_event(phase, data)
 
         await emit("building_context", message="Загрузка контекста…")
-        context, profile_block = await build_context(db, user_id, note_id=note_id)
+        context, profile_block = await build_context(
+            db, user_id, note_id=note_id, user_input=user_input
+        )
 
         from datetime import datetime, timezone
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d, %A")
@@ -96,6 +112,8 @@ class NotesExecutor(BaseChatExecutor):
             PATCH_NOTE_TOOL_DEF,
             REQUEST_NOTE_SELECTION_TOOL_DEF,
             UPDATE_USER_PROFILE_TOOL_DEF,
+            SUGGEST_TAGS_TOOL_DEF,
+            ADD_TAGS_TO_NOTE_TOOL_DEF,
         ]
         openai_tools = [t.to_openai_function() for t in tool_defs]
 
@@ -146,6 +164,7 @@ class NotesExecutor(BaseChatExecutor):
                         "db": db,
                         "created_ids": created_ids,
                         "affected_ids": affected_ids,
+                        "agent_params": agent_params,
                     },
                 )
                 try:

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Folder, Note, User
-from app.schemas.folder import FolderCreate, FolderResponse, FolderTree, FolderTreeResponse, NoteRef
+from app.schemas.folder import FolderCreate, FolderResponse, FolderTree, FolderTreeResponse, FolderUpdate, NoteRef
 
 router = APIRouter(prefix="/folders", tags=["folders"])
 
@@ -54,7 +54,7 @@ async def get_folder_tree(
     note_refs_by_folder: dict[int | None, list[NoteRef]] = defaultdict(list)
     for n in notes:
         note_refs_by_folder[n.folder_id].append(
-            NoteRef(id=n.id, title=n.title)
+            NoteRef(id=n.id, title=n.title, pinned=n.pinned, updated_at=n.updated_at)
         )
 
     roots: list[FolderTree] = []
@@ -97,19 +97,59 @@ async def create_folder(
     return folder
 
 
+async def _get_descendant_folder_ids(
+    db: AsyncSession, folder_id: int, user_id: int
+) -> set[int]:
+    result: set[int] = set()
+    frontier = [folder_id]
+    while frontier:
+        q = select(Folder.id).where(
+            Folder.user_id == user_id,
+            Folder.parent_folder_id.in_(frontier),
+        )
+        r = await db.execute(q)
+        next_ids = list(r.scalars().all())
+        frontier = [i for i in next_ids if i not in result]
+        result.update(next_ids)
+    return result
+
+
 @router.patch("/{folder_id}", response_model=FolderResponse)
 async def update_folder(
     folder_id: int,
-    data: FolderCreate,
+    data: FolderUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Folder:
     folder = await _get_folder_for_user(db, folder_id, user.id)
     if folder is None:
         raise HTTPException(status_code=404, detail="Folder not found")
-    folder.name = data.name
-    folder.parent_folder_id = data.parent_folder_id
-    folder.order_index = data.order_index
+    if data.name is not None:
+        folder.name = data.name
+    if data.parent_folder_id is not None:
+        if data.parent_folder_id == 0:
+            folder.parent_folder_id = None
+        else:
+            parent = await _get_folder_for_user(
+                db, data.parent_folder_id, user.id
+            )
+            if parent is None:
+                raise HTTPException(status_code=400, detail="Parent folder not found")
+            if parent.id == folder_id:
+                raise HTTPException(
+                    status_code=400, detail="Folder cannot be its own parent"
+                )
+            descendants = await _get_descendant_folder_ids(
+                db, folder_id, user.id
+            )
+            if parent.id in descendants:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot move folder into its own subfolder",
+                )
+            folder.parent_folder_id = data.parent_folder_id
+    if data.order_index is not None:
+        folder.order_index = data.order_index
     await db.commit()
     await db.refresh(folder)
     return folder

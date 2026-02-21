@@ -15,6 +15,12 @@ const NotesIcon = () => (
   </svg>
 );
 
+const SavedIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
 const ChatIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -35,12 +41,6 @@ const AddIcon = () => (
   </svg>
 );
 
-const HamburgerIcon = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M4 6h16M4 12h16M4 18h16" />
-  </svg>
-);
-
 const MoreIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="1" />
@@ -53,8 +53,9 @@ export function BottomNavBar({ onAddClick, onMoreClick }: BottomNavBarProps) {
   const location = useLocation();
   const setChatSessionsOpen = useAppModalsStore((s) => s.setChatSessionsOpen);
   const isNotes = location.pathname === "/";
-  const isChat = location.pathname === "/chat";
+  const isSaved = location.pathname === "/saved";
   const isTasks = location.pathname === "/tasks";
+  const isChat = location.pathname.startsWith("/chat");
 
   return (
     <nav
@@ -63,15 +64,15 @@ export function BottomNavBar({ onAddClick, onMoreClick }: BottomNavBarProps) {
       aria-label="Нижняя навигация"
     >
       <Link
-        to="/chat"
+        to="/saved"
         className={`flex flex-col items-center justify-center min-w-[64px] py-2 touch-target-48 ${
-          isChat ? "text-accent" : "text-text-muted"
+          isSaved ? "text-accent" : "text-text-muted"
         }`}
-        aria-label="Обсудить"
-        aria-current={isChat ? "page" : undefined}
+        aria-label="Сохраненные"
+        aria-current={isSaved ? "page" : undefined}
       >
-        <ChatIcon />
-        <span className="text-xs mt-0.5">Обсудить</span>
+        <SavedIcon />
+        <span className="text-xs mt-0.5">Сохраненные</span>
       </Link>
 
       <Link
@@ -105,7 +106,7 @@ export function BottomNavBar({ onAddClick, onMoreClick }: BottomNavBarProps) {
           className="flex flex-col items-center justify-center min-w-[64px] py-2 touch-target-48 text-text-muted hover:text-accent transition-colors"
           aria-label="Диалоги"
         >
-          <HamburgerIcon />
+          <ChatIcon />
           <span className="text-xs mt-0.5">Диалоги</span>
         </button>
       ) : onAddClick ? (

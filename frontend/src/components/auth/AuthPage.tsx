@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { api } from "../../api/client";
 import { useAuthStore } from "../../store/authStore";
+import { needsServerConfig } from "../../lib/apiBase";
 
 export function AuthPage() {
   const token = useAuthStore((s) => s.token);
+  if (needsServerConfig()) return <Navigate to="/config-server" replace />;
   const [allowRegistration, setAllowRegistration] = useState(true);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");

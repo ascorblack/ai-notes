@@ -7,9 +7,10 @@ interface VoiceButtonProps {
   onTranscription: (text: string) => void;
   onError?: (message: string) => void;
   disabled?: boolean;
+  className?: string;
 }
 
-export function VoiceButton({ onTranscription, onError, disabled }: VoiceButtonProps) {
+export function VoiceButton({ onTranscription, onError, disabled, className }: VoiceButtonProps) {
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -74,20 +75,33 @@ export function VoiceButton({ onTranscription, onError, disabled }: VoiceButtonP
       type="button"
       onClick={handleClick}
       disabled={disabled || loading}
-      className="relative touch-target-48 p-2.5 sm:p-3 rounded-xl bg-surface border border-border hover:bg-accent-muted disabled:opacity-50 transition-colors min-h-[2.5rem] min-w-[2.5rem] sm:min-h-0 sm:min-w-0 shrink-0 flex items-center justify-center"
-      title={recording ? "Stop recording" : "Start voice input"}
+      className={`relative touch-target-48 rounded-xl border border-border hover:bg-accent-muted disabled:opacity-50 transition-colors shrink-0 flex items-center justify-center ${className ?? ""}`.trim()}
+      style={{ backgroundColor: "var(--surface-elevated)" }}
+      title={recording ? "Остановить" : "Голосовой ввод"}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
     >
       {recording ? (
         <motion.span
-          className="absolute inset-0 rounded-xl bg-accent/20"
-          animate={{ scale: [1, 1.05, 1], opacity: [0.5, 0.8, 0.5] }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute inset-0 rounded-xl bg-accent/30"
+          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
         />
       ) : null}
-      <span className="relative text-accent text-lg">
-        {loading ? "…" : recording ? "⏹" : "🎤"}
+      <span className="relative text-accent">
+        {loading ? "…" : recording ? (
+          <svg width={className?.includes("w-9") ? 16 : 20} height={className?.includes("w-9") ? 16 : 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+        ) : (
+          <svg width={className?.includes("w-9") ? 18 : 22} height={className?.includes("w-9") ? 18 : 22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+        )}
       </span>
     </motion.button>
   );

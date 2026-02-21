@@ -18,6 +18,7 @@ done
 cd "$ROOT"
 
 echo "=== [1/3] Building frontend ==="
+# Pass VITE_API_BASE for default server URL in APK (optional; user can configure at runtime)
 (cd "$ROOT/frontend" && npm run build)
 
 echo ""

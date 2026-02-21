@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Request
 
 from app.dependencies import get_current_user
 from app.models import User
+from app.middleware.rate_limit import transcribe_limiter
 from app.services.stt import transcribe
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,9 @@ router = APIRouter(prefix="/transcribe", tags=["transcribe"])
 
 
 @router.post("")
+@transcribe_limiter
 async def transcribe_audio(
+    request: Request,
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:

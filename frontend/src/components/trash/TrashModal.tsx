@@ -57,13 +57,16 @@ const TrashContent = ({
       {isLoading ? (
         <p className="text-text-muted text-sm">Загрузка…</p>
       ) : items.length === 0 ? (
-        <p className="text-text-muted text-sm">Корзина пуста</p>
+        <div>
+          <p className="text-text-muted text-sm font-medium">Корзина пуста</p>
+          <p className="text-text-muted text-xs mt-1">Удалённые заметки появятся здесь</p>
+        </div>
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (
             <li
               key={item.id}
-              className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-xl bg-surface/50 border border-border/40"
+              className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-xl pl-4 border-l-2 border-accent/60 bg-accent-muted/20"
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-text-primary truncate">{item.title || "(untitled)"}</p>
@@ -110,7 +113,7 @@ export function TrashModal({ open, onClose, token, onRestore }: TrashModalProps)
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] bg-modal-overlay backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -120,11 +123,7 @@ export function TrashModal({ open, onClose, token, onRestore }: TrashModalProps)
           />
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8 pointer-events-none">
             <motion.div
-              className="pointer-events-auto w-full max-w-lg max-h-[80vh] flex flex-col rounded-xl border border-border overflow-hidden"
-              style={{
-                backgroundColor: "var(--surface-elevated)",
-                boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-              }}
+              className="pointer-events-auto w-full max-w-lg max-h-[80vh] flex flex-col rounded-xl border border-l-4 border-accent/50 border-border overflow-hidden bg-modal-panel backdrop-blur-md shadow-2xl"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}

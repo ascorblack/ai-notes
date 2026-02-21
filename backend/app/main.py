@@ -14,7 +14,12 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session_maker
 from app.models import Note
-from app.routers import agent, auth, chat, events, folders, notes, search as search_router, tasks, transcribe
+from app.routers import agent, auth, batch_notes, chat, events, export_router, folders, notes, saved_messages, search as search_router, tags, tasks, transcribe, websocket
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+from app.middleware.rate_limit import limiter, rate_limiter, transcribe_limiter, agent_limiter
 from app.services import embeddings, search as search_service, stt, workspace, workspace_migrate
 
 # Force console logging — errors go to stderr
@@ -73,6 +78,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Notes API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 @app.exception_handler(Exception)
@@ -98,6 +106,11 @@ app.include_router(tasks.router)
 app.include_router(agent.router)
 app.include_router(chat.router)
 app.include_router(transcribe.router)
+app.include_router(tags.router)
+app.include_router(saved_messages.router)
+app.include_router(batch_notes.router)
+app.include_router(export_router.router)
+app.include_router(websocket.router)
 
 
 @app.get("/health")

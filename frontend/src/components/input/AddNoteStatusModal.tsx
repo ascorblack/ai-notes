@@ -82,20 +82,20 @@ export function AddNoteStatusModal({
       transition={{ duration: 0.2 }}
     >
       <motion.div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-modal-overlay backdrop-blur-sm"
         aria-hidden="true"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       />
       <motion.div
-        className="relative w-full max-w-sm rounded-2xl border border-border bg-surface-elevated shadow-2xl overflow-hidden"
+        className="relative w-full max-w-sm rounded-2xl border border-l-4 border-accent/50 border-border bg-modal-panel backdrop-blur-md shadow-2xl overflow-hidden"
         initial={{ opacity: 0, scale: 0.95, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.98, y: 4 }}
         transition={{ type: "spring", damping: 25, stiffness: 400 }}
       >
-        <div className="px-5 py-4 border-b border-border">
+        <div className="px-5 py-4 border-b border-border/60">
           <h3 className="text-base font-semibold text-text-primary">
             Добавление
           </h3>
@@ -114,7 +114,7 @@ export function AddNoteStatusModal({
             )}
           </AnimatePresence>
         </div>
-        <div className="px-5 py-5 space-y-2.5">
+        <div className="px-5 py-5 pl-4 border-l-2 border-accent/60 bg-accent-muted/20 rounded-xl mx-3 mb-3 space-y-2.5">
           {isError ? (
             <motion.p
               className="text-error text-sm"

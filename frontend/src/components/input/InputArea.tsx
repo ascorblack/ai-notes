@@ -7,6 +7,7 @@ import { useToastStore } from "../../store/toastStore";
 import { useAddInputStore } from "../../store/addInputStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { VoiceButton } from "./VoiceButton";
+import * as offlineStorage from "../../services/offlineStorage";
 import { AddNoteStatusModal, AddNoteStep } from "./AddNoteStatusModal";
 import { NoteSelectionModal } from "./NoteSelectionModal";
 
@@ -29,6 +30,9 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
   const token = useAuthStore((s) => s.token);
   const queryClient = useQueryClient();
   const selectedNoteId = useTreeStore((s) => s.selectedNoteId);
+  const roots = useTreeStore((s) => s.roots);
+  const rootNotes = useTreeStore((s) => s.rootNotes);
+  const setTree = useTreeStore((s) => s.setTree);
   const setLastCreatedIds = useTreeStore((s) => s.setLastCreatedIds);
   const setSelectedNote = useTreeStore((s) => s.setSelectedNote);
   const showToast = useToastStore((s) => s.showToast);
@@ -36,6 +40,10 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
 
   const runAgent = async (userInput: string, noteId: number | null | undefined) => {
     if (!token || !userInput.trim()) return;
+    if (!navigator.onLine) {
+      createSimpleNote();
+      return;
+    }
     setError(null);
     setLoading(true);
     setStatus("Загрузка…");
@@ -101,6 +109,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
             setModalMessage(reason ?? "Ошибка при добавлении");
             showToast(reason ?? "Не удалось сохранить заметку");
           } else {
+            import("../../lib/haptics").then(({ hapticLight }) => hapticLight());
             setModalStep("done");
             setStatus("Готово");
             setText("");
@@ -150,6 +159,51 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
   };
 
   const submit = () => runAgent(text.trim(), selectedNoteId);
+
+  const createSimpleNote = useCallback(async () => {
+    if (!token) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const firstNewline = trimmed.indexOf("\n");
+    const title = firstNewline >= 0 ? trimmed.slice(0, firstNewline).trim() || "Без названия" : trimmed;
+    const content = firstNewline >= 0 ? trimmed.slice(firstNewline + 1).trim() : "";
+
+    if (!navigator.onLine) {
+      try {
+        const { tempId, noteRef } = await offlineStorage.createSimpleNoteOffline(title, content, null);
+        const { roots: r, root_notes: rn } = await offlineStorage.appendNoteToTreeOffline(noteRef, roots, rootNotes, null);
+        setTree(r, rn);
+        setSelectedNote(tempId);
+        setText("");
+        queryClient.invalidateQueries({ queryKey: ["tree"] });
+        const { hapticLight } = await import("../../lib/haptics");
+        hapticLight();
+        showToast("Заметка сохранена (офлайн, синхронизируется при подключении)");
+      } catch (e) {
+        showToast(`Ошибка: ${e instanceof Error ? e.message : "Не удалось сохранить"}`);
+      }
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const created = await api.notes.create(token, { title, content, folder_id: null });
+      setLastCreatedIds([created.id]);
+      setSelectedNote(created.id);
+      setText("");
+      queryClient.invalidateQueries({ queryKey: ["tree"] });
+      queryClient.invalidateQueries({ queryKey: ["note", created.id] });
+      const { hapticLight } = await import("../../lib/haptics");
+      hapticLight();
+      showToast("Заметка создана");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка создания");
+      showToast(`Ошибка: ${e instanceof Error ? e.message : "Не удалось создать"}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [text, token, roots, rootNotes, setTree, setSelectedNote, setLastCreatedIds, queryClient, showToast]);
 
   const handleNoteSelect = (noteId: number) => {
     const input = pendingUserInput;
@@ -232,7 +286,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
             }
           }}
         />
-        <div className="flex gap-2 items-stretch justify-end xs:justify-start">
+        <div className="flex gap-2 items-stretch">
           <VoiceButton
             onTranscription={(t) => {
               setError(null);
@@ -245,6 +299,7 @@ export function InputArea({ variant = "island" }: InputAreaProps) {
             type="button"
             onClick={submit}
             disabled={loading || selectionModalOpen || !text.trim()}
+            title="Через агента — создаст задачу, событие или заметку в нужной папке"
             className="touch-target-48 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-accent text-accent-fg font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed text-sm flex-shrink-0 transition-opacity self-stretch min-h-[48px] sm:min-h-[2.5rem]"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}

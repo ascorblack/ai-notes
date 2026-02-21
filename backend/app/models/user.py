@@ -19,3 +19,6 @@ class User(Base):
     events = relationship("Event", back_populates="user")
     agent_settings = relationship("AgentSettings", back_populates="user")
     chat_sessions = relationship("ChatSession", back_populates="user")
+    tags = relationship("Tag", back_populates="user")
+    saved_messages = relationship("SavedMessage", back_populates="user", cascade="all, delete-orphan")
+    saved_message_categories = relationship("SavedMessageCategory", back_populates="user", cascade="all, delete-orphan")

@@ -67,7 +67,7 @@ export function ConfirmModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/60"
+            className="fixed inset-0 z-[100] bg-modal-overlay"
             onClick={onCancel}
           />
           <motion.div
@@ -78,10 +78,12 @@ export function ConfirmModal({
             className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none"
           >
             <div
-              className="w-full max-w-md max-h-[min(85dvh,calc(100dvh-4rem))] overflow-y-auto rounded-xl border bg-surface-elevated p-4 shadow-xl pointer-events-auto"
-              style={{ borderColor: danger ? "var(--error)" : "var(--border)" }}
+              className={`w-full max-w-md max-h-[min(85dvh,calc(100dvh-4rem))] overflow-y-auto rounded-xl border-l-4 p-4 shadow-xl pointer-events-auto bg-modal-panel backdrop-blur-md ${
+                danger ? "border-error" : "border-accent/50 border-border"
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
+            <div className="pl-4 border-l-2 border-accent/60 bg-accent-muted/20 rounded-xl py-3 px-3">
             <h3 className="text-lg font-medium text-[var(--text-primary)]">{title}</h3>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">{message}</p>
             <div className="mt-4 flex justify-end gap-2">
@@ -103,6 +105,7 @@ export function ConfirmModal({
               >
                 {confirmLabel}
               </button>
+            </div>
             </div>
           </div>
           </motion.div>

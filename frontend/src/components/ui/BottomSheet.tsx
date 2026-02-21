@@ -36,7 +36,7 @@ export function BottomSheet({
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[90] bg-modal-overlay backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -45,9 +45,8 @@ export function BottomSheet({
             aria-hidden="true"
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-[91] flex flex-col rounded-t-2xl border-t border-border shadow-2xl overflow-hidden"
+            className="fixed inset-x-0 bottom-0 z-[91] flex flex-col rounded-t-2xl border-t border-l-4 border-accent/50 border-border shadow-2xl overflow-hidden bg-modal-panel backdrop-blur-md"
             style={{
-              backgroundColor: "var(--surface-elevated)",
               maxHeight,
               paddingBottom: "env(safe-area-inset-bottom)",
             }}
@@ -78,7 +77,7 @@ export function BottomSheet({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="touch-target-48 p-2 rounded-lg text-text-secondary hover:text-accent hover:bg-accent-muted -mr-2"
+                  className="touch-target-48 p-2 rounded-lg text-text-secondary hover:text-accent hover:bg-accent-muted transition-all duration-200 active:scale-95 -mr-2"
                   aria-label="Закрыть"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

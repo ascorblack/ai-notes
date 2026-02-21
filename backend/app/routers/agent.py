@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,15 +17,21 @@ from app.schemas.agent import (
     AgentProcessRequest,
     AgentProcessResponse,
     AgentSettingsResponse,
+    AgentSettingsTestRequest,
+    AgentSettingsTestResponse,
     AgentSettingsUpdate,
     ProfileFactItem,
     ProfileFactUpdate,
     ProfileFactsResponse,
 )
 from app.agent.dispatcher import AgentDispatcher, UnknownIntentError
+from app.middleware.rate_limit import agent_limiter
 from app.agent.intent_classifier import IntentClassifier, IntentCategory
-from app.services.agent import get_profile_facts
-from app.services.agent_settings_service import get_agent_settings_for_api, upsert_agent_settings
+from app.agent.tools.request_clarification import ClarificationNeeded
+from app.services.agent import get_profile_facts, _is_redundant_profile_fact
+from app.services.agent_settings_service import get_agent_settings, get_agent_settings_for_api, upsert_agent_settings
+from app.services.llm import test_connection
+from app.services.pending_actions import pending_actions, PendingAction
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +50,11 @@ async def _stream_generator(
     user: User,
     user_input: str,
     note_id: int | None,
+    session_id: str | None = None,
 ):
     queue: asyncio.Queue[tuple[str, dict]] = asyncio.Queue()
     error_msg: str | None = None
+    current_session_id = session_id or str(uuid.uuid4())
 
     async def on_event(phase: str, data: dict) -> None:
         await queue.put((phase, data))
@@ -59,6 +68,22 @@ async def _stream_generator(
     async def run_agent() -> None:
         nonlocal error_msg
         try:
+            pending = await pending_actions.get(user.id, current_session_id)
+            if pending:
+                pending.context["clarification_response"] = user_input
+                await pending_actions.delete(user.id, current_session_id)
+                await queue.put(("resuming", {"message": "Продолжаю…"}))
+                affected, created, _ = await _dispatcher.process(
+                    intent=IntentCategory[pending.context.get("intent", "NOTE")],
+                    db=db,
+                    user_id=user.id,
+                    user_input=user_input,
+                    note_id=note_id,
+                    on_event=on_event,
+                )
+                await queue.put(("done", {"affected_ids": affected, "created_ids": created, "created_note_ids": created}))
+                return
+
             await queue.put(("classifying_intent", {"message": "Определяю тип запроса…"}))
             intent = await IntentClassifier.classify_intent(db, user.id, user_input)
             if intent == IntentCategory.UNKNOWN:
@@ -73,6 +98,24 @@ async def _stream_generator(
                 note_id=note_id,
                 on_event=on_event,
             )
+        except ClarificationNeeded as e:
+            await pending_actions.set(
+                user.id,
+                current_session_id,
+                PendingAction(
+                    tool=e.tool,
+                    params=e.params,
+                    awaiting="clarification",
+                    context={"original_input": user_input, "intent": INTENT_LABELS.get(IntentCategory.NOTE, "NOTE"), **e.context},
+                ),
+            )
+            await queue.put((
+                "clarification_request",
+                {
+                    "question": e.question,
+                    "session_id": current_session_id,
+                },
+            ))
         except UnknownIntentError as e:
             await queue.put(("done", {"unknown_intent": True, "affected_ids": [], "created_ids": [], "created_note_ids": [], "reason": str(e)}))
         except Exception as e:
@@ -94,6 +137,8 @@ async def _stream_generator(
                 break
             if phase == "done":
                 chunk = _sse_event("done", data)
+            elif phase == "clarification_request":
+                chunk = _sse_event("clarification_request", data)
             else:
                 chunk = _sse_event("status", {"phase": phase, **data})
             yield chunk
@@ -146,6 +191,66 @@ async def patch_settings(
     await db.commit()
     s = await get_agent_settings_for_api(db, user.id, agent)
     return AgentSettingsResponse(**s)
+
+
+@router.post("/settings/test", response_model=AgentSettingsTestResponse)
+async def test_settings(
+    data: AgentSettingsTestRequest,
+    agent: str = "notes",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentSettingsTestResponse:
+    if agent not in ("notes", "chat"):
+        raise HTTPException(status_code=400, detail="agent must be 'notes' or 'chat'")
+    stored = await get_agent_settings(db, user.id, agent)
+    base_url = (data.base_url or "").strip() or stored["base_url"]
+    model = (data.model or "").strip() or stored["model"]
+    api_key: str | None = data.api_key
+    if api_key is not None and api_key.strip() == "":
+        api_key = None
+    if api_key is None:
+        api_key = stored.get("api_key") or None
+        if api_key is not None and api_key.strip() == "":
+            api_key = None
+    if not base_url or not model:
+        return AgentSettingsTestResponse(ok=False, error_type="other", message="Укажите Base URL и модель")
+    ok, err_msg = await test_connection(base_url=base_url, model=model, api_key=api_key)
+    if ok:
+        return AgentSettingsTestResponse(ok=True)
+    error_type = "other"
+    if err_msg and "API ключ" in err_msg:
+        error_type = "invalid_api_key"
+    elif err_msg and ("недоступен" in err_msg or "Сервер" in err_msg):
+        error_type = "connection"
+    return AgentSettingsTestResponse(ok=False, error_type=error_type, message=err_msg)
+
+
+@router.post("/profile", response_model=ProfileFactItem, status_code=status.HTTP_201_CREATED)
+async def create_profile_fact(
+    data: ProfileFactUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProfileFactItem:
+    fact_text = data.fact.strip()
+    if not fact_text:
+        raise HTTPException(status_code=400, detail="Fact cannot be empty")
+    existing_rows = await db.execute(
+        select(UserProfileFact.fact).where(UserProfileFact.user_id == user.id)
+    )
+    existing_facts = [r[0] for r in existing_rows.all()]
+    existing_normalized = {r.strip().lower() for r in existing_facts}
+    if fact_text.lower() in existing_normalized:
+        raise HTTPException(status_code=409, detail="Такой факт уже есть")
+    if _is_redundant_profile_fact(fact_text, existing_facts):
+        raise HTTPException(
+            status_code=409,
+            detail="Папка для этой сферы уже указана в другой записи",
+        )
+    row = UserProfileFact(user_id=user.id, fact=fact_text)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return ProfileFactItem(id=row.id, fact=row.fact)
 
 
 @router.get("/profile", response_model=ProfileFactsResponse)
@@ -203,7 +308,9 @@ async def delete_profile_fact(
 
 
 @router.post("/process", response_model=AgentProcessResponse)
+@agent_limiter
 async def agent_process(
+    request: Request,
     data: AgentProcessRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -240,7 +347,9 @@ async def agent_process(
 
 
 @router.post("/process/stream")
+@agent_limiter
 async def agent_process_stream(
+    request: Request,
     data: AgentProcessRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

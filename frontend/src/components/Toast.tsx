@@ -22,12 +22,21 @@ export function Toast() {
       {message && (
         <motion.div
           role="alert"
-          className={`fixed bottom-6 right-6 z-50 max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm ${
+          className={`fixed z-[9999] max-w-sm px-4 py-3 rounded-xl shadow-lg text-sm border ${
             isSuccess
               ? "border-success/40 text-success bg-surface-elevated"
               : "border-error/40 text-error bg-surface-elevated"
           }`}
-          style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}
+          // Mobile: top-left, Desktop: bottom-right
+          style={{
+            top: "max(1rem, env(safe-area-inset-top))",
+            right: undefined,
+            bottom: undefined,
+            left: "max(1rem, env(safe-area-inset-left))",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+          }}
+          // Desktop override
+          data-desktop-position
           initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8 }}

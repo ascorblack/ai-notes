@@ -45,6 +45,18 @@ class AgentDispatcher:
         if intent == IntentCategory.UNKNOWN:
             raise UnknownIntentError("Не понял запрос. Попробуйте переформулировать.")
 
+        # When user has a note/task selected, always use NotesExecutor — it supports append/patch.
+        # TaskExecutor only has create_task and would create a duplicate instead of editing.
+        if note_id is not None:
+            return await self.notes.execute_turn(
+                db=db,
+                user_id=user_id,
+                user_input=user_input,
+                note_id=note_id,
+                agent_params=agent_params,
+                on_event=on_event,
+            )
+
         if intent == IntentCategory.NOTE:
             return await self.notes.execute_turn(
                 db=db,

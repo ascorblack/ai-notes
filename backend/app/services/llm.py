@@ -10,6 +10,51 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+async def test_connection(
+    *,
+    base_url: str,
+    model: str,
+    api_key: str | None = None,
+    timeout: float = 15.0,
+) -> tuple[bool, str | None]:
+    """
+    Test LLM connection. Returns (ok, error_message).
+    error_message is one of: "connection" | "invalid_api_key" | "other" with human-readable detail.
+    """
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 1,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+        logger.warning("test_connection: connection failed", extra={"url": url, "error": str(e)})
+        return False, f"Сервер недоступен: {type(e).__name__}"
+    except Exception as e:
+        logger.warning("test_connection: unexpected error", extra={"url": url, "error": str(e)}, exc_info=True)
+        return False, f"Ошибка: {e!s}"
+
+    if resp.status_code == 401:
+        return False, "Неверный API ключ"
+    if resp.status_code == 404:
+        return False, "Endpoint не найден (проверьте Base URL)"
+    if resp.status_code >= 400:
+        try:
+            body = resp.json()
+            err = body.get("error", body)
+            msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        except Exception:
+            msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+        return False, f"Ошибка сервера: {msg}"
+    return True, None
+
+
 def _agent_params(
     *,
     base_url: str | None = None,

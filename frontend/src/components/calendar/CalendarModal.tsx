@@ -27,7 +27,7 @@ export function CalendarModal({
   if (isMobile) {
     return (
       <BottomSheet open={open} onClose={onClose} title="Календарь" maxHeight="90dvh">
-        <div className="p-4">
+        <div className="p-4 pl-4 border-l-2 border-accent/60 bg-accent-muted/20 rounded-xl mx-4 mb-4">
           <CalendarView token={token} onEventClick={handleEventClick} />
         </div>
       </BottomSheet>
@@ -39,7 +39,7 @@ export function CalendarModal({
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] bg-modal-overlay backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -49,11 +49,7 @@ export function CalendarModal({
           />
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8 pointer-events-none">
             <motion.div
-              className="pointer-events-auto w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl border border-border overflow-hidden"
-              style={{
-                backgroundColor: "var(--surface-elevated)",
-                boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-              }}
+              className="pointer-events-auto w-full max-w-5xl max-h-[90vh] flex flex-col rounded-xl border border-l-4 border-accent/50 border-border overflow-hidden bg-modal-panel backdrop-blur-md shadow-2xl"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}

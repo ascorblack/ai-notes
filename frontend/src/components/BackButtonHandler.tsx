@@ -33,5 +33,17 @@ export function BackButtonHandler() {
     };
   }, [navigate, closeTop]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (closeTop()) return;
+      if (locationRef.current === "/chat" || locationRef.current === "/tasks") {
+        navigate("/", { replace: true });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navigate, closeTop]);
+
   return null;
 }

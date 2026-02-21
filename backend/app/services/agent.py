@@ -1,6 +1,8 @@
+import asyncio
 import difflib
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Awaitable
@@ -208,7 +210,7 @@ SYSTEM_PROMPT = """Ты — агент организации заметок. П
    e) request_note_selection — только когда запрос на редактирование/дополнение и подходят 2+ заметки (п.5).
 
 Правила папок и иерархии:
-- Папки могут иметь подпапки (parent_folder_id). Контекст показывает дерево — используй id родителя для подпапок.
+- Папки могут иметь подпапки (parent_folder_id). Контекст содержит ПОЛНОЕ дерево всех папок пользователя (включая созданные вручную) — используй id из этого дерева.
 - Если заметка относится к подкатегории существующей папки — создай подпапку. Примеры подкатегорий: задачи, проекты, идеи, встречи, доки, обучение.
 - Пример: есть папка «ЭБС-Лань» id=1; пользователь добавляет «задача с работы: сделать отчёт» → create_folder_with_note(folder_name="Задачи", parent_folder_id=1, …). НЕ класть в корень «ЭБС-Лань», а в подпапку.
 - Если подпапка уже есть в дереве — create_note с folder_id этой подпапки.
@@ -247,7 +249,7 @@ SYSTEM_PROMPT = """Ты — агент организации заметок. П
 - Один ввод → один основной tool call; дополнительно можно вызвать update_user_profile при создании заметки
 
 Долговременная память:
-- update_user_profile вызывай ТОЛЬКО для НОВЫХ фактов. Перед вызовом проверь блок «Известно о пользователе»: если такой факт уже есть — НЕ вызывай.
+- update_user_profile вызывай ТОЛЬКО для НОВЫХ фактов. Перед вызовом проверь блок «Известно о пользователе»: если факт уже есть ИЛИ папка для этой сферы уже указана — НЕ вызывай (не дублируй).
 - После create_folder_with_note/create_note — вызови update_user_profile при новой сфере или подкатегории. Формат: «Пользователь X. Идеи по Y класть в папку Z.» Для подпапок: «Задачи по [компания] класть в подпапку Задачи внутри [папка].»
 - skip_save — когда нечего сохранять: приветствие, «спасибо», неполная фраза, тест.
 """
@@ -337,6 +339,35 @@ def _execute_patch_note(content: str, old_text: str, new_text: str) -> str:
     raise ValueError("Fragment not found")
 
 
+_FOLDER_PATTERN = re.compile(
+    r"в\s+папку\s+([^\s.,;\n]+)",
+    re.IGNORECASE,
+)
+
+
+def _extract_folder_from_fact(fact: str) -> str | None:
+    """Извлекает название папки из факта (например «в папку ЭБС-Лань»)."""
+    m = _FOLDER_PATTERN.search(fact)
+    if m:
+        return (m.group(1) or "").strip().lower()
+    return None
+
+
+def _is_redundant_profile_fact(new_fact: str, existing_facts: list[str]) -> bool:
+    """True если факт избыточен — та же папка уже указана в существующих фактах."""
+    new_folder = _extract_folder_from_fact(new_fact)
+    if not new_folder:
+        return False
+    new_lower = new_fact.strip().lower()
+    for ex in existing_facts:
+        if ex.strip().lower() == new_lower:
+            return True
+        existing_folder = _extract_folder_from_fact(ex)
+        if existing_folder and existing_folder == new_folder:
+            return True
+    return False
+
+
 async def get_profile_facts(db: AsyncSession, user_id: int) -> list[tuple[int, str]]:
     """Returns list of (id, fact) deduplicated by normalized fact."""
     result = await db.execute(
@@ -355,12 +386,26 @@ async def get_profile_facts(db: AsyncSession, user_id: int) -> list[tuple[int, s
     return deduped
 
 
-async def build_context(db: AsyncSession, user_id: int, note_id: int | None = None) -> tuple[str, str]:
-    """Returns (context, profile_block for system prompt). note_id — заметка для редактирования, её полный контент включается."""
+async def build_context(
+    db: AsyncSession,
+    user_id: int,
+    note_id: int | None = None,
+    user_input: str | None = None,
+) -> tuple[str, str]:
+    """Returns (context, profile_block for system prompt). note_id — заметка для редактирования.
+    user_input — для auto-link: при создании новой заметки (note_id=None) ищем похожие для [[wikilinks]]."""
+    # Профиль пользователя (факты) попадает в system prompt сразу — до вызова LLM
     profile_facts = await get_profile_facts(db, user_id)
     profile_block = ""
     if profile_facts:
-        profile_block = "\n\nИзвестно о пользователе (используй для выбора папки):\n" + "\n".join(f"- {f}" for _id, f in profile_facts)
+        profile_block = "\n\nИзвестно о пользователе (используй для выбора папки и размещения заметок/задач/событий):\n" + "\n".join(f"- {f}" for _id, f in profile_facts)
+    profile_block += """
+
+Долговременная память (ОБЯЗАТЕЛЬНО после create_note, create_folder_with_note, create_task, create_note_with_event):
+- После КАЖДОГО создания — проверь запрос на важную информацию: компания, сфера, проект, должность, категория.
+- Если такая информация есть И (блока «Известно о пользователе» нет ИЛИ её там нет) — вызови update_user_profile(fact="...").
+- При create_folder_with_note или создании новой папки — почти всегда новая сфера, ОБЯЗАТЕЛЬНО добавь факт.
+- Формат fact: «Пользователь [контекст]. Идеи/задачи по [сфера] класть в папку [название].»"""
 
     # Полный контент открытой заметки — для append/patch
     note_for_edit_block = ""
@@ -396,7 +441,9 @@ async def build_context(db: AsyncSession, user_id: int, note_id: int | None = No
             lines.extend(_tree_lines(children, indent + 1))
         return lines
 
-    parts: list[str] = ["Папки (иерархия; id для parent_folder_id):"]
+    parts: list[str] = [
+        "Полное дерево папок (все папки пользователя, включая созданные вручную; используй для folder_id и parent_folder_id):"
+    ]
     parts.extend(_tree_lines(roots))
 
     notes_result = await db.execute(
@@ -418,7 +465,36 @@ async def build_context(db: AsyncSession, user_id: int, note_id: int | None = No
     for e in events:
         parts.append(f"  - id={e.id} note_id={e.note_id} title={e.title!r} starts={e.starts_at.isoformat()} ends={e.ends_at.isoformat()}")
 
+    # Auto-link: похожие заметки для wikilinks (и при создании, и при редактировании)
+    related_block = ""
+    search_query = (user_input or "").strip() if note_id is None else ""
+    if note_id is not None and note_for_edit_block:
+        note = await _get_note_for_user(db, note_id, user_id)
+        if note:
+            content = workspace.get_content(user_id, note.id)
+            search_query = ((note.title or "") + " " + (content or "")[:500]).strip()
+    if search_query:
+        try:
+            results = await asyncio.to_thread(search.search_notes, user_id, search_query[:500], 5)
+            exclude_id = note_id
+            if results:
+                titles = [
+                    r.get("title", "")
+                    for r in results
+                    if r.get("title") and (exclude_id is None or r.get("note_id") != exclude_id)
+                ]
+                if titles:
+                    related_block = (
+                        "\n\nПохожие заметки для связывания (добавь [[Title]] в ## Связи при релевантности): "
+                        + ", ".join(f"[[{t}]]" for t in titles[:5])
+                        + "\n"
+                    )
+        except Exception as e:
+            logger.warning("build_context: related search failed", extra={"error": str(e)})
+
     context_str = "\n".join(parts)
+    if related_block:
+        context_str = context_str + related_block
     if note_for_edit_block:
         context_str = note_for_edit_block + "\n\n" + context_str
     return context_str, profile_block
@@ -762,16 +838,22 @@ async def process_agent(
         elif name == "update_user_profile":
             fact = args.get("fact", "").strip()
             if fact:
-                existing = await db.execute(
+                existing_rows = await db.execute(
                     select(UserProfileFact.fact).where(UserProfileFact.user_id == user.id)
                 )
-                existing_facts = {r[0].strip().lower() for r in existing.all()}
-                fact_normalized = fact.lower()
-                if fact_normalized not in existing_facts:
+                existing_facts = [r[0] for r in existing_rows.all()]
+                existing_set = {r.strip().lower() for r in existing_facts}
+                fact_normalized = fact.strip().lower()
+                if fact_normalized not in existing_set and not _is_redundant_profile_fact(
+                    fact, existing_facts
+                ):
                     db.add(UserProfileFact(user_id=user.id, fact=fact))
                     await db.flush()
                 else:
-                    logger.debug("update_user_profile: skipped duplicate", extra={"fact_preview": fact[:50]})
+                    logger.debug(
+                        "update_user_profile: skipped duplicate/redundant",
+                        extra={"fact_preview": fact[:50]},
+                    )
 
         elif name == "skip_save":
             skipped_reason = args.get("reason", "нечего сохранять")

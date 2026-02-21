@@ -23,9 +23,18 @@ class Note(Base):
     is_task: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     subtasks: Mapped[list[dict] | None] = mapped_column(JSONB, default=None, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(default=None, nullable=True)
+    deadline: Mapped[datetime | None] = mapped_column(default=None, nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(16), default="medium", nullable=True)
+    task_status: Mapped[str | None] = mapped_column(String(20), default="backlog", nullable=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     user = relationship("User", back_populates="notes")
     folder = relationship("Folder", back_populates="notes")
     event = relationship(
         "Event", back_populates="note", uselist=False, passive_deletes=True
     )
+    note_tags = relationship("NoteTag", back_populates="note", cascade="all, delete-orphan")
+    tags = relationship("Tag", secondary="note_tags", back_populates="notes", viewonly=True)
+    outgoing_links = relationship("NoteLink", foreign_keys="NoteLink.source_note_id", back_populates="source_note", cascade="all, delete-orphan")
+    incoming_links = relationship("NoteLink", foreign_keys="NoteLink.target_note_id", back_populates="target_note", cascade="all, delete-orphan")
+    versions = relationship("NoteVersion", back_populates="note", cascade="all, delete-orphan")

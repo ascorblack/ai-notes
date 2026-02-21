@@ -22,6 +22,20 @@ const ProfileFactsContent = ({ token }: { token: string }) => {
   });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [newFact, setNewFact] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const createMutation = useMutation({
+    mutationFn: (fact: string) => api.agent.createProfileFact(token, fact),
+    onSuccess: () => {
+      setNewFact("");
+      setAddError(null);
+      queryClient.invalidateQueries({ queryKey: ["profile-facts"] });
+    },
+    onError: (e: Error) => {
+      setAddError(e.message);
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (factId: number) => api.agent.deleteProfileFact(token, factId),
@@ -54,8 +68,38 @@ const ProfileFactsContent = ({ token }: { token: string }) => {
     updateMutation.mutate({ id: editingId, fact: editingText.trim() });
   };
 
+  const handleAddFact = () => {
+    const trimmed = newFact.trim();
+    if (!trimmed) return;
+    createMutation.mutate(trimmed);
+  };
+
   return (
     <div className="p-4">
+      <div className="mb-4 p-3 rounded-xl pl-4 border-l-2 border-accent/60 bg-accent-muted/20">
+        <p className="text-xs text-text-muted mb-2">
+          Добавьте вручную правило — куда класть заметки, задачи или события (например: «Идеи по проекту X класть в папку Проекты»).
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newFact}
+            onChange={(e) => { setNewFact(e.target.value); setAddError(null); }}
+            onKeyDown={(e) => e.key === "Enter" && handleAddFact()}
+            placeholder="Правило для модели…"
+            className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-border/60 bg-bg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+          />
+          <button
+            type="button"
+            onClick={handleAddFact}
+            disabled={createMutation.isPending || !newFact.trim()}
+            className="touch-target-48 shrink-0 px-4 py-2 rounded-lg bg-accent text-accent-fg font-medium text-sm hover:opacity-90 disabled:opacity-50"
+          >
+            {createMutation.isPending ? "…" : "Добавить"}
+          </button>
+        </div>
+        {addError && <p className="text-error text-xs mt-1">{addError}</p>}
+      </div>
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-text-muted text-sm">
           <span className="inline-block w-2 h-2 rounded-full bg-accent animate-pulse mr-2" />
@@ -70,7 +114,7 @@ const ProfileFactsContent = ({ token }: { token: string }) => {
           {facts.map((item: { id: number; fact: string }) => (
             <li
               key={item.id}
-              className="flex items-start gap-2 text-sm text-text-primary pl-4 border-l-2 border-accent/50 py-1"
+              className="flex items-start gap-2 text-sm text-text-primary pl-4 border-l-2 border-accent/60 bg-accent-muted/20 rounded-xl py-2 px-3"
             >
               {editingId === item.id ? (
                 <>
@@ -172,7 +216,7 @@ export function ProfileFactsModal({ open, onClose, token }: ProfileFactsModalPro
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] bg-modal-overlay backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -182,11 +226,7 @@ export function ProfileFactsModal({ open, onClose, token }: ProfileFactsModalPro
           />
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
             <motion.div
-              className="pointer-events-auto w-full max-w-md max-h-[70vh] flex flex-col rounded-xl border border-border/60 overflow-hidden"
-              style={{
-                backgroundColor: "var(--surface-elevated)",
-                boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-              }}
+              className="pointer-events-auto w-full max-w-md max-h-[70vh] flex flex-col rounded-xl border border-l-4 border-accent/50 border-border/60 overflow-hidden bg-modal-panel backdrop-blur-md shadow-2xl"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}

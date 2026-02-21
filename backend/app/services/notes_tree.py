@@ -36,7 +36,9 @@ async def get_notes_tree(db: AsyncSession, user_id: int) -> FolderTreeResponse:
 
     note_refs_by_folder: dict[int | None, list[NoteRef]] = defaultdict(list)
     for n in notes:
-        note_refs_by_folder[n.folder_id].append(NoteRef(id=n.id, title=n.title))
+        note_refs_by_folder[n.folder_id].append(
+            NoteRef(id=n.id, title=n.title, pinned=n.pinned, updated_at=n.updated_at)
+        )
 
     roots: list[FolderTree] = []
     for f in folders:

@@ -21,6 +21,18 @@ class AgentSettingsUpdate(BaseModel):
     max_tokens: int | None = None
 
 
+class AgentSettingsTestRequest(BaseModel):
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+
+
+class AgentSettingsTestResponse(BaseModel):
+    ok: bool
+    error_type: str | None = None  # "connection" | "invalid_api_key" | "other"
+    message: str | None = None
+
+
 class ProfileFactItem(BaseModel):
     id: int
     fact: str
@@ -36,7 +48,8 @@ class ProfileFactsResponse(BaseModel):
 
 class AgentProcessRequest(BaseModel):
     user_input: str
-    note_id: int | None = None  # открытая заметка — для дополнения/редактирования
+    note_id: int | None = None
+    session_id: str | None = None
 
 
 class AgentProcessResponse(BaseModel):
@@ -44,4 +57,7 @@ class AgentProcessResponse(BaseModel):
     created_ids: list[int]
     skipped: bool | None = None
     reason: str | None = None
-    unknown_intent: bool | None = None  # True when classifier could not understand request
+    unknown_intent: bool | None = None
+    clarification_request: bool | None = None
+    question: str | None = None
+    session_id: str | None = None

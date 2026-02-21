@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -9,12 +9,29 @@ class SubtaskItem(BaseModel):
     done: bool = False
 
 
+class TagBrief(BaseModel):
+    id: int
+    name: str
+    color: str | None = None
+
+
+class BatchMoveRequest(BaseModel):
+    note_ids: list[int]
+    target_folder_id: int | None = None
+
+
+class BatchDeleteRequest(BaseModel):
+    note_ids: list[int]
+
+
 class NoteCreate(BaseModel):
     title: str
     content: str = ""
     folder_id: int | None = None
     is_task: bool = False
     subtasks: list[SubtaskItem] | None = None
+    deadline: datetime | None = None
+    priority: Literal["high", "medium", "low"] | None = None
 
 
 class NoteUpdate(BaseModel):
@@ -23,6 +40,9 @@ class NoteUpdate(BaseModel):
     folder_id: int | None = None
     is_task: bool | None = None
     subtasks: list[SubtaskItem] | None = None
+    deadline: datetime | None = None
+    priority: Literal["high", "medium", "low"] | None = None
+    pinned: bool | None = None
 
 
 class NoteResponse(BaseModel):
@@ -35,6 +55,11 @@ class NoteResponse(BaseModel):
     is_task: bool = False
     subtasks: list[dict[str, Any]] | None = None
     completed_at: datetime | None = None
+    deadline: datetime | None = None
+    priority: str | None = "medium"
+    tags: list[TagBrief] = []
+    pinned: bool = False
+    created: bool = False  # True when daily note was just created (GET /daily only)
 
     model_config = {"from_attributes": True}
 
@@ -48,6 +73,9 @@ class TaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     folder_id: int | None = None
+    deadline: datetime | None = None
+    priority: str | None = "medium"
+    task_status: str | None = "backlog"
 
     model_config = {"from_attributes": True}
 
